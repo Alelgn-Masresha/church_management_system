@@ -1,0 +1,5 @@
+{
+  "name": "Summit CMS Registration",
+  "description": "Digital membership registration system for Summit Full Gospel Church, featuring a multi-step wizard for capturing personal, religious, family, and professional details.",
+  "requestFramePermissions": []
+}
