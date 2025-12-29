@@ -106,7 +106,7 @@ export const INITIAL_DATA: FormData = {
 
 // --- Management Extended Types ---
 
-export type MemberRole = 'Member' | 'Leader' | 'Admin' | 'Pastor';
+export type MemberRole = 'Member' | 'Leader' | 'Admin' | 'Pastor' | 'Counsel';
 export type MemberStatus = 'Active' | 'Transferred' | 'Inactive';
 
 export interface TransferDetails {
@@ -128,6 +128,7 @@ export interface Member extends FormData {
   participationScore?: number; // 0-100
   isRedFlagged?: boolean;
   pastoralNotes?: PastoralNote[];
+  assignedCounselId?: string;
 }
 
 // --- Pastoral Notes Types ---

@@ -4,15 +4,17 @@ import { Member, HBSGroup, FormData, Zone } from '../../types';
 import { Dashboard } from './Dashboard';
 import { MemberDirectory } from './MemberDirectory';
 import { StructureManager } from './StructureManager';
+import { AssignCounsels } from './AssignCounsels';
 import { Settings as SettingsPage } from './Settings';
 import { RegistrationWizard } from '../RegistrationWizard';
-import { LayoutDashboard, Users, GitGraph, Settings, Menu, UserPlus, Bell, Search, MessageSquare } from 'lucide-react';
+import { LayoutDashboard, Users, GitGraph, Settings, Menu, UserPlus, Bell, Search, MessageSquare, UserCheck } from 'lucide-react';
 
 interface Props {
    members: Member[];
    zones: Zone[];
    groups: HBSGroup[];
    updateMember: (id: string, updates: Partial<Member>) => void;
+   updateMembers: (updates: { id: string, data: Partial<Member> }[]) => void;
    onRegisterMember: (data: FormData) => void;
    structureActions: {
       addGroup: (g: HBSGroup) => void;
@@ -24,7 +26,7 @@ interface Props {
 }
 
 export const ManagementPortal: React.FC<Props> = (props) => {
-   const [activeTab, setActiveTab] = useState<'dashboard' | 'members' | 'structure' | 'settings' | 'register'>('dashboard');
+   const [activeTab, setActiveTab] = useState<'dashboard' | 'members' | 'structure' | 'settings' | 'register' | 'counsels'>('dashboard');
    const [sidebarOpen, setSidebarOpen] = useState(true);
    const [deepLinkedMemberId, setDeepLinkedMemberId] = useState<string | null>(null);
    const [initialFilters, setInitialFilters] = useState<any>(null);
@@ -49,7 +51,7 @@ export const ManagementPortal: React.FC<Props> = (props) => {
    );
 
    return (
-      <div className="flex h-[calc(100vh-64px)] bg-slate-50 overflow-hidden">
+      <div className="flex h-screen bg-slate-50 overflow-hidden">
          {/* Sidebar */}
          <div className={`bg-slate-900 text-white flex flex-col transition-all duration-300 ${sidebarOpen ? 'w-64' : 'w-20'}`}>
             <div className="p-4 flex items-center justify-between border-b border-slate-800">
@@ -62,6 +64,7 @@ export const ManagementPortal: React.FC<Props> = (props) => {
             <nav className="flex-1 p-4 space-y-2">
                <NavItem id="dashboard" label="Overview" icon={LayoutDashboard} />
                <NavItem id="members" label="Members Directory" icon={Users} />
+               <NavItem id="counsels" label="Assign Counsels" icon={UserCheck} />
                <NavItem id="register" label="Registration" icon={UserPlus} />
                <NavItem id="structure" label="Zone & Cells" icon={GitGraph} />
                <NavItem id="settings" label="Settings" icon={Settings} />
@@ -172,11 +175,13 @@ export const ManagementPortal: React.FC<Props> = (props) => {
                      <header className="mb-8">
                         <h1 className="text-2xl font-bold text-slate-900">
                            {activeTab === 'members' && 'Member Management'}
+                           {activeTab === 'counsels' && 'Counsels Assignment'}
                            {activeTab === 'register' && 'New Member Registration'}
                            {activeTab === 'structure' && 'Church Structure'}
                         </h1>
                         <p className="text-slate-500 text-sm">
                            {activeTab === 'members' && 'Search, filter, update and manage church members.'}
+                           {activeTab === 'counsels' && 'Select and assign members as follow-up counsels.'}
                            {activeTab === 'register' && 'Register a new member into the system.'}
                            {activeTab === 'structure' && 'Manage Zones and assign Cell Leaders.'}
                         </p>
@@ -220,6 +225,102 @@ export const ManagementPortal: React.FC<Props> = (props) => {
                         onUpdateGroup={props.structureActions.updateGroup}
                         onDeleteGroup={props.structureActions.deleteGroup}
                         onAddZone={props.structureActions.addZone}
+                     />
+                  )}
+
+                  {activeTab === 'counsels' && (
+                     <AssignCounsels
+                        members={props.members}
+                        onAssignCounsels={(ids, targetId) => {
+                           if (targetId) {
+                              ids.forEach(id => props.updateMember(id, { assignedCounselId: targetId }));
+                           } else {
+                              ids.forEach(id => props.updateMember(id, { role: 'Counsel' }));
+                           }
+                        }}
+                        onRemoveMember={(id, isCounselRole) => {
+                           if (isCounselRole) {
+                              props.updateMember(id, { role: 'Member' });
+                           } else {
+                              props.updateMember(id, { assignedCounselId: undefined });
+                           }
+                        }}
+                        onReplaceMember={(oldId, newId, successorId) => {
+                           const oldMember = props.members.find(m => m.id === oldId);
+                           const newMember = props.members.find(m => m.id === newId);
+                           if (!oldMember || !newMember) return;
+                           const updates: { id: string, data: Partial<Member> }[] = [];
+
+                           const oldParent = oldMember.assignedCounselId;
+                           const newParent = newMember.assignedCounselId;
+
+                           // 1. Successor takes New Member's former position (spot under their boss)
+                           if (successorId) {
+                              updates.push({ id: successorId, data: { role: newMember.role, assignedCounselId: newParent } });
+                              // New member's old team now reports to Successor
+                              props.members.forEach(m => {
+                                 if (m.assignedCounselId === newId && m.id !== successorId) {
+                                    updates.push({ id: m.id, data: { assignedCounselId: successorId } });
+                                 }
+                              });
+                           }
+
+                           // 2. New Member takes Old Member's former position
+                           // SAFETY: If the Old boss was the New member (Upstream Move), 
+                           // the New member should now report to the Successor.
+                           let targetParent = oldParent;
+                           if (targetParent === newId && successorId) targetParent = successorId;
+                           // Final safety: never point to self
+                           if (targetParent === newId) targetParent = undefined;
+
+                           updates.push({ id: newId, data: { role: oldMember.role, assignedCounselId: targetParent } });
+
+                           // 3. Old Member's team now reports to New Member
+                           props.members.forEach(m => {
+                              if (m.assignedCounselId === oldId && m.id !== newId) {
+                                 updates.push({ id: m.id, data: { assignedCounselId: newId } });
+                              }
+                           });
+
+                           // 4. Old Member becomes unassigned
+                           updates.push({ id: oldId, data: { role: 'Member', assignedCounselId: undefined } });
+
+                           props.updateMembers(updates);
+                           alert(`${newMember.firstName} is now the leader. Hierarchy updated successfully.`);
+                        }}
+                        onSwapMembers={(id1, id2) => {
+                           const m1 = props.members.find(m => m.id === id1);
+                           const m2 = props.members.find(m => m.id === id2);
+                           if (!m1 || !m2) return;
+                           const updates: { id: string, data: Partial<Member> }[] = [];
+
+                           const m1WasParentOfM2 = m2.assignedCounselId === id1;
+                           const m2WasParentOfM1 = m1.assignedCounselId === id2;
+
+                           if (m1WasParentOfM2) {
+                              // Parent -> m1 -> m2  becomes  Parent -> m2 -> m1
+                              updates.push({ id: id2, data: { role: m1.role, assignedCounselId: m1.assignedCounselId } });
+                              updates.push({ id: id1, data: { role: m2.role, assignedCounselId: id2 } });
+                           } else if (m2WasParentOfM1) {
+                              // Parent -> m2 -> m1  becomes  Parent -> m1 -> m2
+                              updates.push({ id: id1, data: { role: m2.role, assignedCounselId: m2.assignedCounselId } });
+                              updates.push({ id: id2, data: { role: m1.role, assignedCounselId: id1 } });
+                           } else {
+                              // Standard swap of unrelated branches
+                              updates.push({ id: id1, data: { role: m2.role, assignedCounselId: m2.assignedCounselId } });
+                              updates.push({ id: id2, data: { role: m1.role, assignedCounselId: m1.assignedCounselId } });
+                           }
+
+                           // Subordinate hand-off
+                           props.members.forEach(m => {
+                              if (m.id === id1 || m.id === id2) return;
+                              if (m.assignedCounselId === id1) updates.push({ id: m.id, data: { assignedCounselId: id2 } });
+                              else if (m.assignedCounselId === id2) updates.push({ id: m.id, data: { assignedCounselId: id1 } });
+                           });
+
+                           props.updateMembers(updates);
+                           alert(`Swapped positions of ${m1.firstName} and ${m2.firstName}.`);
+                        }}
                      />
                   )}
 
