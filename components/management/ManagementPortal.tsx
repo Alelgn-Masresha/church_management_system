@@ -231,19 +231,19 @@ export const ManagementPortal: React.FC<Props> = (props) => {
                   {activeTab === 'counsels' && (
                      <AssignCounsels
                         members={props.members}
+                        rootCounselId={props.members.find(m => m.role === 'Pastor')?.id}
                         onAssignCounsels={(ids, targetId) => {
                            if (targetId) {
                               ids.forEach(id => props.updateMember(id, { assignedCounselId: targetId }));
-                           } else {
-                              ids.forEach(id => props.updateMember(id, { role: 'Counsel' }));
                            }
+                           // If targetId is null (meaning root/pastor in old logic, but now satisfied by rootCounselId),
+                           // we typically shouldn't hit this case if rootCounselId is set.
+                           // But if we did, we might want to assign to Pastor.
+                           // The AssignCounsels component will pass 'activeCounselId' which should be the Pastor's ID.
                         }}
                         onRemoveMember={(id, isCounselRole) => {
-                           if (isCounselRole) {
-                              props.updateMember(id, { role: 'Member' });
-                           } else {
-                              props.updateMember(id, { assignedCounselId: undefined });
-                           }
+                           // If removing from assignment, set to null (which converts to DB NULL)
+                           props.updateMember(id, { assignedCounselId: null });
                         }}
                         onReplaceMember={(oldId, newId, successorId) => {
                            const oldMember = props.members.find(m => m.id === oldId);
@@ -271,7 +271,7 @@ export const ManagementPortal: React.FC<Props> = (props) => {
                            let targetParent = oldParent;
                            if (targetParent === newId && successorId) targetParent = successorId;
                            // Final safety: never point to self
-                           if (targetParent === newId) targetParent = undefined;
+                           if (targetParent === newId) targetParent = null;
 
                            updates.push({ id: newId, data: { role: oldMember.role, assignedCounselId: targetParent } });
 
@@ -283,7 +283,7 @@ export const ManagementPortal: React.FC<Props> = (props) => {
                            });
 
                            // 4. Old Member becomes unassigned
-                           updates.push({ id: oldId, data: { role: 'Member', assignedCounselId: undefined } });
+                           updates.push({ id: oldId, data: { role: 'Member', assignedCounselId: null } });
 
                            props.updateMembers(updates);
                            alert(`${newMember.firstName} is now the leader. Hierarchy updated successfully.`);

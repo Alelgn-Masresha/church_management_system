@@ -8,9 +8,81 @@ import { MOCK_FULL_MEMBERS, MOCK_GROUPS, MOCK_ZONES } from './data/mockData';
 
 export default function App() {
   // Global State (In a real app, this would be in a Context or Redux store)
-  const [members, setMembers] = useState<Member[]>(MOCK_FULL_MEMBERS);
-  const [groups, setGroups] = useState<HBSGroup[]>(MOCK_GROUPS);
-  const [zones, setZones] = useState<Zone[]>(MOCK_ZONES);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [groups, setGroups] = useState<HBSGroup[]>([]);
+  const [zones, setZones] = useState<Zone[]>([]);
+  // Fetch data from API
+  React.useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [usersRes, groupsRes, zonesRes] = await Promise.all([
+          fetch('/api/users'),
+          fetch('/api/groups'),
+          fetch('/api/zones')
+        ]);
+
+        if (usersRes.ok) {
+          const usersData = await usersRes.json();
+          // Transform snake_case to camelCase
+          const mappedUsers = usersData.map((u: any) => ({
+            ...u,
+            firstName: u.first_name,
+            middleName: u.middle_name,
+            lastName: u.last_name,
+            mobilePhone: u.mobile_phone,
+            extraMobile: u.extra_mobile,
+            homePhone: u.home_phone,
+            workPhone: u.work_phone,
+            primaryEmail: u.primary_email,
+            secondaryEmail: u.secondary_email,
+            subCity: u.sub_city,
+            houseNumber: u.house_number,
+            religiousBackground: u.religious_background,
+            dateOfSalvation: u.date_of_salvation,
+            isBaptized: u.is_baptized,
+            baptismDate: u.baptism_date,
+            previousChurchName: u.previous_church_name,
+            maritalStatus: u.marital_status,
+            spouseName: u.spouse_name,
+            marriageDate: u.marriage_date,
+            professionalStatus: u.professional_status,
+            assignedGroupId: u.assigned_group_id,
+            assignedCounselId: u.assigned_counselor_id,
+            registrationDate: u.registration_date,
+            memberId: u.member_id,
+            // Ensure arrays/objects are handled if they come as null
+            ministries: [],
+            children: [],
+            socials: {},
+            educationHistory: []
+          }));
+          setMembers(mappedUsers);
+        }
+
+        if (groupsRes.ok) {
+          const groupsData = await groupsRes.json();
+          // Map group data if necessary
+          setGroups(groupsData);
+        }
+
+        if (zonesRes.ok) {
+          const zonesData = await zonesRes.json();
+          // Map zone data if necessary
+          const mappedZones = zonesData.map((z: any) => ({
+            name: z.name,
+            area: z.area_description
+          }));
+          setZones(mappedZones);
+        }
+
+      } catch (error) {
+        console.error("Failed to fetch data:", error);
+      }
+    };
+
+    fetchData();
+  }, []);
+
   const [newQuestionCount, setNewQuestionCount] = useState(2); // Mock initial count
 
   // Actions
@@ -25,21 +97,57 @@ export default function App() {
     setMembers(prev => [newMember, ...prev]);
   };
 
-  const handleUpdateMember = (id: string, updates: Partial<Member>) => {
-    setMembers(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m));
+  /* 
+   * Actions interacting with Backend
+   */
+
+  // Single Member Update
+  const handleUpdateMember = async (id: string, updates: Partial<Member>) => {
+    try {
+      const response = await fetch(`/api/users/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+
+      if (response.ok) {
+        // Optimistic update
+        setMembers(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m));
+      } else {
+        console.error("Failed to update member");
+      }
+    } catch (e) {
+      console.error("Error updating member:", e);
+    }
   };
 
-  const handleUpdateMembers = (updates: { id: string, data: Partial<Member> }[]) => {
-    setMembers(prev => {
-      const newMembers = [...prev];
-      updates.forEach(u => {
-        const idx = newMembers.findIndex(m => m.id === u.id);
-        if (idx !== -1) {
-          newMembers[idx] = { ...newMembers[idx], ...u.data };
-        }
+  // Batch Members Update
+  const handleUpdateMembers = async (updates: { id: string, data: Partial<Member> }[]) => {
+    try {
+      const response = await fetch('/api/users/batch/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
       });
-      return newMembers;
-    });
+
+      if (response.ok) {
+        // Optimistic update
+        setMembers(prev => {
+          const newMembers = [...prev];
+          updates.forEach(u => {
+            const idx = newMembers.findIndex(m => m.id === u.id);
+            if (idx !== -1) {
+              newMembers[idx] = { ...newMembers[idx], ...u.data };
+            }
+          });
+          return newMembers;
+        });
+      } else {
+        console.error("Failed to batch update members");
+      }
+    } catch (e) {
+      console.error("Error batch updating members:", e);
+    }
   };
 
   // Structure Actions

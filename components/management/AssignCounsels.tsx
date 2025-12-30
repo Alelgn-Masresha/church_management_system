@@ -5,6 +5,7 @@ import { Search, UserCheck, Shield, Users, ChevronLeft, ChevronRight, CheckCircl
 
 interface Props {
     members: Member[];
+    rootCounselId?: string;
     onAssignCounsels: (memberIds: string[], targetCounselId: string | null) => void;
     onRemoveMember: (memberId: string, isCounselRole: boolean) => void;
     onReplaceMember: (oldId: string, newId: string, successorId?: string) => void;
@@ -13,11 +14,19 @@ interface Props {
 
 const ITEMS_PER_PAGE = 10;
 
-export const AssignCounsels: React.FC<Props> = ({ members, onAssignCounsels, onRemoveMember, onReplaceMember, onSwapMembers }) => {
+export const AssignCounsels: React.FC<Props> = ({ members, rootCounselId, onAssignCounsels, onRemoveMember, onReplaceMember, onSwapMembers }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
-    const [activeCounselId, setActiveCounselId] = useState<string | null>(null);
+    const [activeCounselId, setActiveCounselId] = useState<string | null>(rootCounselId || null);
+
+    // Reset active ID if root changes and we are at root
+    React.useEffect(() => {
+        if (!activeCounselId && rootCounselId) {
+            setActiveCounselId(rootCounselId);
+        }
+    }, [rootCounselId]);
+
     const [memberToRemove, setMemberToRemove] = useState<Member | null>(null);
     const [memberToReplace, setMemberToReplace] = useState<Member | null>(null);
     const [replacementSearch, setReplacementSearch] = useState('');
@@ -49,7 +58,7 @@ export const AssignCounsels: React.FC<Props> = ({ members, onAssignCounsels, onR
         if (activeCounselId) {
             return members.filter(m => m.assignedCounselId === activeCounselId).length;
         }
-        return members.filter(m => m.role === 'Counsel').length;
+        return 0; // Should not happen if rootCounselId is set
     }, [members, activeCounselId]);
 
     const totalAfterAssignment = currentlyAssignedCount + selectedIds.length;
@@ -119,12 +128,12 @@ export const AssignCounsels: React.FC<Props> = ({ members, onAssignCounsels, onR
 
         // If the person moving INTO the new spot is currently leading ANYONE, 
         // they need a successor for their old team.
-        return isReplacementALeader || selectedReplacement.role === 'Counsel';
+        return isReplacementALeader;
     }, [selectedReplacement, memberToReplace, isReplacementALeader]);
 
     // Global Stats
     const totalAssigned = useMemo(() =>
-        members.filter(m => !!m.assignedCounselId || m.role === 'Counsel').length,
+        members.filter(m => !!m.assignedCounselId || members.some(sub => sub.assignedCounselId === m.id)).length,
         [members]);
     const assignmentPercentage = Math.round((totalAssigned / members.length) * 100);
 
@@ -142,7 +151,7 @@ export const AssignCounsels: React.FC<Props> = ({ members, onAssignCounsels, onR
         const search = successorSearch.toLowerCase();
         return members.filter(m => {
             if (m.id === memberToReplace?.id || m.id === selectedReplacement?.id) return false;
-            if (!!m.assignedCounselId || m.role === 'Counsel') return false; // Only unassigned
+            if (!!m.assignedCounselId || members.some(sub => sub.assignedCounselId === m.id)) return false; // Only unassigned
             return `${m.firstName} ${m.lastName}`.toLowerCase().includes(search);
         });
     }, [members, successorSearch, selectedReplacement, memberToReplace]);
@@ -257,7 +266,7 @@ export const AssignCounsels: React.FC<Props> = ({ members, onAssignCounsels, onR
                                                     {member.mobilePhone}
                                                 </td>
                                                 <td className="px-6 py-4">
-                                                    {member.role === 'Counsel' ? (
+                                                    {(!member.assignedCounselId && members.some(sub => sub.assignedCounselId === member.id)) ? (
                                                         <span className="flex items-center gap-1.5 text-purple-600 font-medium text-xs">
                                                             <Shield size={12} />
                                                             Pastor Solomon
@@ -274,11 +283,11 @@ export const AssignCounsels: React.FC<Props> = ({ members, onAssignCounsels, onR
                                                 <td className="px-6 py-4 text-center" onClick={(e) => e.stopPropagation()}>
                                                     <button
                                                         onClick={() => toggleMember(member.id)}
-                                                        disabled={!isSelected && (totalAfterAssignment >= 9 || member.role === 'Counsel' || !!member.assignedCounselId)}
+                                                        disabled={!isSelected && (totalAfterAssignment >= 9 || !!member.assignedCounselId || members.some(sub => sub.assignedCounselId === member.id))}
                                                         className={`px-3 py-1 rounded-md text-xs font-bold transition-all
                                                           ${isSelected
                                                                 ? 'bg-red-100 text-red-600 hover:bg-red-200'
-                                                                : (totalAfterAssignment >= 9 || member.role === 'Counsel' || !!member.assignedCounselId)
+                                                                : (totalAfterAssignment >= 9 || !!member.assignedCounselId || members.some(sub => sub.assignedCounselId === member.id))
                                                                     ? 'bg-slate-100 text-slate-300 cursor-not-allowed'
                                                                     : 'bg-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white'}
                                                         `}
@@ -461,7 +470,7 @@ export const AssignCounsels: React.FC<Props> = ({ members, onAssignCounsels, onR
                                     <div className="space-y-3">
                                         {(activeCounselId
                                             ? members.filter(m => m.assignedCounselId === activeCounselId)
-                                            : members.filter(m => m.role === 'Counsel' || (!m.assignedCounselId && members.some(sub => sub.assignedCounselId === m.id)))).length === 0 ? (
+                                            : members.filter(m => (!m.assignedCounselId && members.some(sub => sub.assignedCounselId === m.id)))).length === 0 ? (
                                             <div className="flex flex-col items-center justify-center h-64 text-slate-400 space-y-3 text-center">
                                                 <Users size={40} className="opacity-20" />
                                                 <p className="text-xs px-4 italic">
@@ -473,7 +482,7 @@ export const AssignCounsels: React.FC<Props> = ({ members, onAssignCounsels, onR
                                         ) : (
                                             (activeCounselId
                                                 ? members.filter(m => m.assignedCounselId === activeCounselId)
-                                                : members.filter(m => m.role === 'Counsel' || (!m.assignedCounselId && members.some(sub => sub.assignedCounselId === m.id)))).map(member => (
+                                                : members.filter(m => (!m.assignedCounselId && members.some(sub => sub.assignedCounselId === m.id)))).map(member => (
                                                     <div
                                                         key={member.id}
                                                         onClick={() => {
