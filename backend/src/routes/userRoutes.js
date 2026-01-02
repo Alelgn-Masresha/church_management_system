@@ -8,4 +8,6 @@ router.get('/:id', userController.getUserById);
 router.patch('/:id', userController.updateUser);
 router.post('/batch/update', userController.batchUpdateUsers);
 
+router.delete('/:id', userController.deleteUser);
+
 module.exports = router;

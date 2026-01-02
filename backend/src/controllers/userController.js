@@ -56,3 +56,14 @@ exports.batchUpdateUsers = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+exports.deleteUser = async (req, res) => {
+    try {
+        const deleted = await User.delete(req.params.id);
+        if (!deleted) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        res.json({ message: 'User deleted successfully', id: deleted.id });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};

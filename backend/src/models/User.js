@@ -99,7 +99,6 @@ class User {
         let counter = 1;
 
         Object.keys(userData).forEach(key => {
-            console.log(`Processing key: ${key}, Value: ${userData[key]}, Allowed: ${allowedFields[key]}`);
             if (allowedFields[key] && userData[key] !== undefined) {
                 updates.push(`${allowedFields[key]} = $${counter}`);
                 values.push(userData[key]);

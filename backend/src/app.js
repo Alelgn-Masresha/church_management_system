@@ -18,6 +18,18 @@ app.use('/api/users', userRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/zones', zoneRoutes);
 
+const childRoutes = require('./routes/childRoutes');
+const educationRoutes = require('./routes/educationRoutes');
+const pastoralNoteRoutes = require('./routes/pastoralNoteRoutes');
+const hbsSessionRoutes = require('./routes/hbsSessionRoutes');
+const counselingHistoryRoutes = require('./routes/counselingHistoryRoutes');
+
+app.use('/api/children', childRoutes);
+app.use('/api/education', educationRoutes);
+app.use('/api/pastoral-notes', pastoralNoteRoutes);
+app.use('/api/hbs-sessions', hbsSessionRoutes);
+app.use('/api/counseling-history', counselingHistoryRoutes);
+
 // Base Route
 app.get('/', (req, res) => {
     res.send('Summit CMS Backend is running');

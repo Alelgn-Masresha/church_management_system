@@ -325,7 +325,7 @@ export const ManagementPortal: React.FC<Props> = (props) => {
                   )}
 
                   {activeTab === 'settings' && (
-                     <SettingsPage />
+                     <SettingsPage members={props.members} onUpdateMember={props.updateMember} onUpdateMembers={props.updateMembers} />
                   )}
                </div>
             </div>

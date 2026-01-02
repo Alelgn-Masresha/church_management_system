@@ -171,7 +171,7 @@ export const MemberProfile: React.FC<Props> = ({ member, onBack, onUpdate }) => 
                            <span className="text-gray-300">|</span>
                            <span>Age: <span className="font-medium text-gray-700">{age || 'N/A'}</span></span>
                            <span className="text-gray-300">|</span>
-                           <span>Member Since: <span className="font-medium text-gray-700">{formatDate(member.registrationDate)}</span></span>
+                           <span>Registered at: <span className="font-medium text-gray-700">{formatDate(member.registrationDate)}</span></span>
                         </div>
 
                         {/* Spiritual Milestones */}
