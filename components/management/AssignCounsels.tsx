@@ -38,14 +38,20 @@ export const AssignCounsels: React.FC<Props> = ({ members, rootCounselId, onAssi
         members.find(m => m.id === activeCounselId),
         [members, activeCounselId]);
 
+    const rootMember = useMemo(() =>
+        rootCounselId ? members.find(m => m.id === rootCounselId) : null,
+        [members, rootCounselId]);
+
     // Filtering
     const filteredMembers = useMemo(() => {
         return members.filter(m => {
+            if (m.id === activeCounselId) return false; // Hide the person we are assigning TO
             const search = searchTerm.toLowerCase();
-            const fullName = `${m.firstName} ${m.middleName} ${m.lastName}`.toLowerCase();
+            const middle = m.middleName ? m.middleName + ' ' : '';
+            const fullName = `${m.firstName} ${middle}${m.lastName}`.toLowerCase();
             return fullName.includes(search) || m.mobilePhone.includes(searchTerm);
         });
-    }, [members, searchTerm]);
+    }, [members, searchTerm, activeCounselId]);
 
     // Pagination
     const totalPages = Math.ceil(filteredMembers.length / ITEMS_PER_PAGE);
@@ -58,8 +64,15 @@ export const AssignCounsels: React.FC<Props> = ({ members, rootCounselId, onAssi
         if (activeCounselId) {
             return members.filter(m => m.assignedCounselId === activeCounselId).length;
         }
-        return 0; // Should not happen if rootCounselId is set
+        return 0;
     }, [members, activeCounselId]);
+
+    const rootLabel = useMemo(() => {
+        const pastors = members.filter(m => m.role === 'Pastor');
+        if (pastors.length === 1) return `Pastor ${pastors[0].firstName} ${pastors[0].lastName}`;
+        if (pastors.length > 1) return "Pastors Oversight";
+        return "Church Oversight";
+    }, [members]);
 
     const totalAfterAssignment = currentlyAssignedCount + selectedIds.length;
     const isReadyToAssign = totalAfterAssignment <= 9 && selectedIds.length > 0;
@@ -81,11 +94,6 @@ export const AssignCounsels: React.FC<Props> = ({ members, rootCounselId, onAssi
         if (isReadyToAssign) {
             onAssignCounsels(selectedIds, activeCounselId);
             setSelectedIds([]);
-            if (activeCounsel) {
-                alert(`Successfully updated ${activeCounsel.firstName}'s group.`);
-            } else {
-                alert("Successfully updated Pastor Solomon's team.");
-            }
         }
     };
 
@@ -168,10 +176,14 @@ export const AssignCounsels: React.FC<Props> = ({ members, rootCounselId, onAssi
         <div className="space-y-6 animate-fadeIn pb-12">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
-                    {activeCounsel && (
+                    {activeCounsel && activeCounsel.id !== rootCounselId && (
                         <button
                             onClick={() => {
-                                setActiveCounselId(null);
+                                const parentId = activeCounsel.assignedCounselId;
+                                // If parent is root (and root is defined), go to root. If no parent, and root defined, go to root.
+                                // If root is NOT defined (multi-pastor), and no parent, go to null.
+                                if (parentId) setActiveCounselId(parentId);
+                                else setActiveCounselId(rootCounselId || null);
                                 setSelectedIds([]);
                             }}
                             className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-600"
@@ -182,12 +194,12 @@ export const AssignCounsels: React.FC<Props> = ({ members, rootCounselId, onAssi
                     )}
                     <div>
                         <h1 className="text-2xl font-bold text-slate-900">
-                            {activeCounsel ? `${activeCounsel.firstName} ${activeCounsel.lastName}'s Group` : "Pastor Solomon's Team"}
+                            {activeCounsel ? `${activeCounsel.firstName} ${activeCounsel.lastName}'s Group` : `${rootLabel}'s Team`}
                         </h1>
                         <p className="text-slate-500 text-sm">
                             {activeCounsel
                                 ? "Assign members for follow-up under this counsel's care."
-                                : "Members assigned to follow-up under Pastor Solomon's supervision."}
+                                : `Members assigned to follow-up under ${rootLabel}'s supervision.`}
                         </p>
                     </div>
                 </div>
@@ -243,7 +255,8 @@ export const AssignCounsels: React.FC<Props> = ({ members, rootCounselId, onAssi
                                 <tbody className="divide-y divide-slate-50">
                                     {paginatedMembers.map(member => {
                                         const isSelected = selectedIds.includes(member.id);
-                                        const name = `${member.firstName} ${member.middleName} ${member.lastName}`;
+                                        const middle = member.middleName ? member.middleName + ' ' : '';
+                                        const name = `${member.firstName} ${middle}${member.lastName}`;
 
                                         // Find counselor name
                                         const counselor = member.assignedCounselId
@@ -266,10 +279,15 @@ export const AssignCounsels: React.FC<Props> = ({ members, rootCounselId, onAssi
                                                     {member.mobilePhone}
                                                 </td>
                                                 <td className="px-6 py-4">
-                                                    {(!member.assignedCounselId && members.some(sub => sub.assignedCounselId === member.id)) ? (
+                                                    {member.role === 'Pastor' ? (
+                                                        <span className="flex items-center gap-1.5 text-slate-500 font-bold text-xs">
+                                                            <Shield size={12} className="text-purple-600" />
+                                                            Church Lead
+                                                        </span>
+                                                    ) : (!member.assignedCounselId && members.some(sub => sub.assignedCounselId === member.id)) ? (
                                                         <span className="flex items-center gap-1.5 text-purple-600 font-medium text-xs">
                                                             <Shield size={12} />
-                                                            Pastor Solomon
+                                                            {rootLabel}
                                                         </span>
                                                     ) : counselorName ? (
                                                         <span className="flex items-center gap-1.5 text-blue-600 font-medium text-xs">
@@ -383,22 +401,24 @@ export const AssignCounsels: React.FC<Props> = ({ members, rootCounselId, onAssi
                                     <div className="absolute left-2.5 top-6 bottom-6 w-0.5 bg-slate-100" />
 
                                     <div className="space-y-12 relative z-10 w-full">
-                                        {/* Pastor Level Node */}
+                                        {/* Root / Pastor Level Node */}
                                         <div
                                             onClick={() => {
-                                                setActiveCounselId(null);
+                                                setActiveCounselId(rootCounselId || null);
                                                 setSelectedIds([]);
                                             }}
                                             className={`flex flex-col items-center gap-1 cursor-pointer group transition-all
-                                                 ${!activeCounselId ? 'opacity-100' : 'opacity-40 hover:opacity-100'}
+                                                 ${(rootCounselId ? activeCounselId === rootCounselId : !activeCounselId) ? 'opacity-100' : 'opacity-40 hover:opacity-100'}
                                              `}
                                         >
                                             <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all bg-white
-                                                 ${!activeCounselId ? 'border-purple-500 ring-4 ring-purple-100 shadow-sm shadow-purple-200' : 'border-slate-300 group-hover:border-purple-400'}
+                                                 ${(rootCounselId ? activeCounselId === rootCounselId : !activeCounselId) ? 'border-purple-500 ring-4 ring-purple-100 shadow-sm shadow-purple-200' : 'border-slate-300 group-hover:border-purple-400'}
                                              `}>
-                                                <div className={`w-1.5 h-1.5 rounded-full ${!activeCounselId ? 'bg-purple-500' : 'bg-slate-300 group-hover:bg-purple-400'}`} />
+                                                <div className={`w-1.5 h-1.5 rounded-full ${(rootCounselId ? activeCounselId === rootCounselId : !activeCounselId) ? 'bg-purple-500' : 'bg-slate-300 group-hover:bg-purple-400'}`} />
                                             </div>
-                                            <span className={`text-[9px] font-bold text-center leading-tight ${!activeCounselId ? 'text-purple-700' : 'text-slate-400 group-hover:text-purple-600'}`}>Pastor</span>
+                                            <span className={`text-[9px] font-bold text-center leading-tight ${(rootCounselId ? activeCounselId === rootCounselId : !activeCounselId) ? 'text-purple-700' : 'text-slate-400 group-hover:text-purple-600'}`}>
+                                                {rootMember ? rootMember.firstName : 'Overview'}
+                                            </span>
                                         </div>
 
                                         {/* Path Nodes */}
@@ -406,7 +426,10 @@ export const AssignCounsels: React.FC<Props> = ({ members, rootCounselId, onAssi
                                             const path: Member[] = [];
                                             let current = activeCounsel;
                                             let depth = 0;
-                                            while (current && depth < 10) { // Safety limit to prevent infinite loops
+                                            while (current && depth < 10) {
+                                                // If we have a Root defined, stop when we hit it so we don't duplicate it in the path
+                                                if (rootCounselId && current.id === rootCounselId) break;
+
                                                 path.unshift(current);
                                                 current = members.find(m => m.id === current?.assignedCounselId);
                                                 depth++;
@@ -451,14 +474,14 @@ export const AssignCounsels: React.FC<Props> = ({ members, rootCounselId, onAssi
                                                     setSelectedIds([]);
                                                 }}
                                                 className="p-1 hover:bg-slate-100 rounded transition-colors text-slate-600"
-                                                title={activeCounsel.assignedCounselId ? "Back to parent" : "Back to Pastor Solomon"}
+                                                title={activeCounsel.assignedCounselId ? "Back to parent" : `Back to ${rootLabel}`}
                                             >
                                                 <ChevronLeft size={18} />
                                             </button>
                                         )}
                                         <h3 className="font-bold text-slate-900 flex items-center gap-2 underline decoration-purple-500 underline-offset-4 truncate">
                                             <Shield size={18} className="text-purple-600 shrink-0" />
-                                            {activeCounsel ? `Assigned to ${activeCounsel.firstName} ${activeCounsel.lastName}` : "Assigned to Pastor Solomon"}
+                                            {activeCounsel ? `Assigned to ${activeCounsel.firstName} ${activeCounsel.lastName}` : `Assigned to ${rootLabel}`}
                                         </h3>
                                     </div>
                                     <p className="text-[10px] text-slate-400 mb-4 italic text-center">
@@ -470,7 +493,7 @@ export const AssignCounsels: React.FC<Props> = ({ members, rootCounselId, onAssi
                                     <div className="space-y-3">
                                         {(activeCounselId
                                             ? members.filter(m => m.assignedCounselId === activeCounselId)
-                                            : members.filter(m => (!m.assignedCounselId && members.some(sub => sub.assignedCounselId === m.id)))).length === 0 ? (
+                                            : members.filter(m => (m.role === 'Pastor' && !m.assignedCounselId) || (!m.assignedCounselId && members.some(sub => sub.assignedCounselId === m.id)))).length === 0 ? (
                                             <div className="flex flex-col items-center justify-center h-64 text-slate-400 space-y-3 text-center">
                                                 <Users size={40} className="opacity-20" />
                                                 <p className="text-xs px-4 italic">
@@ -482,7 +505,7 @@ export const AssignCounsels: React.FC<Props> = ({ members, rootCounselId, onAssi
                                         ) : (
                                             (activeCounselId
                                                 ? members.filter(m => m.assignedCounselId === activeCounselId)
-                                                : members.filter(m => (!m.assignedCounselId && members.some(sub => sub.assignedCounselId === m.id)))).map(member => (
+                                                : members.filter(m => (m.role === 'Pastor' && !m.assignedCounselId) || (!m.assignedCounselId && members.some(sub => sub.assignedCounselId === m.id)))).map(member => (
                                                     <div
                                                         key={member.id}
                                                         onClick={() => {
@@ -504,24 +527,28 @@ export const AssignCounsels: React.FC<Props> = ({ members, rootCounselId, onAssi
                                                             <p className="text-[10px] text-slate-500 truncate">{member.mobilePhone}</p>
                                                         </div>
                                                         <div className="flex items-center gap-1 shrink-0">
-                                                            <button
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    closeModal();
-                                                                    setMemberToReplace(member);
-                                                                }}
-                                                                className="p-1.5 hover:bg-white/50 rounded-md text-slate-400 hover:text-blue-500 transition-colors"
-                                                                title="Replace or Swap Position"
-                                                            >
-                                                                <RefreshCw size={14} />
-                                                            </button>
-                                                            <button
-                                                                onClick={(e) => handleRemove(e, member)}
-                                                                className="p-1.5 hover:bg-white/50 rounded-md text-slate-400 hover:text-red-500 transition-colors"
-                                                                title="Remove Assignment"
-                                                            >
-                                                                <Trash2 size={14} />
-                                                            </button>
+                                                            {member.role !== 'Pastor' && member.id !== rootCounselId && (
+                                                                <>
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            closeModal();
+                                                                            setMemberToReplace(member);
+                                                                        }}
+                                                                        className="p-1.5 hover:bg-white/50 rounded-md text-slate-400 hover:text-blue-500 transition-colors"
+                                                                        title="Replace or Swap Position"
+                                                                    >
+                                                                        <RefreshCw size={14} />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={(e) => handleRemove(e, member)}
+                                                                        className="p-1.5 hover:bg-white/50 rounded-md text-slate-400 hover:text-red-500 transition-colors"
+                                                                        title="Remove Assignment"
+                                                                    >
+                                                                        <Trash2 size={14} />
+                                                                    </button>
+                                                                </>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 ))

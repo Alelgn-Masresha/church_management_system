@@ -90,7 +90,8 @@ export const MemberDirectory: React.FC<Props> = ({
       // Zone filter
       if (activeFilters.selectedZone) {
          const group = groups.find(g => g.id === member.assignedGroupId);
-         if (!group || group.zone !== activeFilters.selectedZone) return false;
+         const zone = zones.find(z => z.name === activeFilters.selectedZone);
+         if (!group || !zone || group.zoneId !== zone.id) return false;
       }
 
       return true;
@@ -359,16 +360,16 @@ export const MemberDirectory: React.FC<Props> = ({
                         <div className="grid grid-cols-2 gap-3">
                            {zones.map(zone => (
                               <button
-                                 key={zone.name}
-                                 onClick={() => { setSelectedZone(zone.name); setSelectedCell(''); }}
-                                 className={`p-4 rounded-xl border-2 text-left transition-all relative group ${selectedZone === zone.name
+                                 key={zone.id}
+                                 onClick={() => { setSelectedZone(zone.id); setSelectedCell(''); }}
+                                 className={`p-4 rounded-xl border-2 text-left transition-all relative group ${selectedZone === zone.id
                                     ? 'border-blue-600 bg-blue-50/50 ring-4 ring-blue-50'
                                     : 'border-gray-100 hover:border-gray-200 bg-gray-50'
                                     }`}
                               >
-                                 <p className={`font-black text-sm uppercase ${selectedZone === zone.name ? 'text-blue-700' : 'text-gray-600'}`}>{zone.name}</p>
-                                 <p className="text-[10px] font-bold text-gray-400 mt-1">{groups.filter(g => g.zone === zone.name).length} Active Cells</p>
-                                 {selectedZone === zone.name && (
+                                 <p className={`font-black text-sm uppercase ${selectedZone === zone.id ? 'text-blue-700' : 'text-gray-600'}`}>{zone.name}</p>
+                                 <p className="text-[10px] font-bold text-gray-400 mt-1">{groups.filter(g => g.zoneId === zone.id).length} Active Cells</p>
+                                 {selectedZone === zone.id && (
                                     <div className="absolute -top-2 -right-2 bg-blue-600 text-white p-1 rounded-full shadow-lg">
                                        <Check size={12} />
                                     </div>
@@ -383,8 +384,8 @@ export const MemberDirectory: React.FC<Props> = ({
                         <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-4">Step 2: Assign Cell</label>
                         {selectedZone ? (
                            <div className="space-y-3">
-                              {groups.filter(g => g.zone === selectedZone).length > 0 ? (
-                                 groups.filter(g => g.zone === selectedZone).map(group => (
+                              {groups.filter(g => g.zoneId === selectedZone).length > 0 ? (
+                                 groups.filter(g => g.zoneId === selectedZone).map(group => (
                                     <button
                                        key={group.id}
                                        onClick={() => setSelectedCell(group.id)}

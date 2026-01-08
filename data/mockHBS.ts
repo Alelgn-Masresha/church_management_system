@@ -4,10 +4,10 @@ import { HBSGroup, HBSMember, HBSSession } from '../types';
 export const MOCK_ZONES = ['Zone 1', 'Zone 2', 'Zone 3', 'Zone 4', 'Zone 5', 'Zone 6'];
 
 export const MOCK_GROUPS: HBSGroup[] = [
-  { id: 'g1', name: 'Arat Kilo Group', zone: 'Zone 1', location: 'Arat Kilo, House 102', leaderId: 'm1', meetingDay: 'Wednesday' },
-  { id: 'g2', name: 'Sidist Kilo Group', zone: 'Zone 1', location: 'Sidist Kilo, Near Campus', leaderId: 'm5', meetingDay: 'Thursday' },
-  { id: 'g3', name: 'Bole Group', zone: 'Zone 2', location: 'Bole Medhanealem', leaderId: 'm10', meetingDay: 'Tuesday' },
-  { id: 'g4', name: 'Megenagna Group', zone: 'Zone 3', location: 'Megenagna Area', leaderId: 'm15', meetingDay: 'Friday' },
+  { id: 'g1', name: 'Arat Kilo Group', zoneId: 'Zone 1', location: 'Arat Kilo, House 102', leaderId: 'm1', meetingDay: 'Wednesday' },
+  { id: 'g2', name: 'Sidist Kilo Group', zoneId: 'Zone 1', location: 'Sidist Kilo, Near Campus', leaderId: 'm5', meetingDay: 'Thursday' },
+  { id: 'g3', name: 'Bole Group', zoneId: 'Zone 2', location: 'Bole Medhanealem', leaderId: 'm10', meetingDay: 'Tuesday' },
+  { id: 'g4', name: 'Megenagna Group', zoneId: 'Zone 3', location: 'Megenagna Area', leaderId: 'm15', meetingDay: 'Friday' },
 ];
 
 export const MOCK_MEMBERS: Record<string, HBSMember[]> = {

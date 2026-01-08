@@ -21,6 +21,8 @@ interface Props {
       updateGroup: (id: string, g: Partial<HBSGroup>) => void;
       deleteGroup: (id: string) => void;
       addZone: (z: Zone) => void;
+      updateZone: (id: string, z: Partial<Zone>) => void;
+      deleteZone: (id: string) => void;
    };
    newQuestionCount?: number;
 }
@@ -225,21 +227,25 @@ export const ManagementPortal: React.FC<Props> = (props) => {
                         onUpdateGroup={props.structureActions.updateGroup}
                         onDeleteGroup={props.structureActions.deleteGroup}
                         onAddZone={props.structureActions.addZone}
+                        onUpdateZone={props.structureActions.updateZone}
+                        onDeleteZone={props.structureActions.deleteZone}
                      />
                   )}
 
                   {activeTab === 'counsels' && (
                      <AssignCounsels
                         members={props.members}
-                        rootCounselId={props.members.find(m => m.role === 'Pastor')?.id}
+                        rootCounselId={(() => {
+                           const pastors = props.members.filter(m => m.role === 'Pastor');
+                           return pastors.length === 1 ? pastors[0].id : undefined;
+                        })()}
                         onAssignCounsels={(ids, targetId) => {
-                           if (targetId) {
-                              ids.forEach(id => props.updateMember(id, { assignedCounselId: targetId }));
-                           }
-                           // If targetId is null (meaning root/pastor in old logic, but now satisfied by rootCounselId),
-                           // we typically shouldn't hit this case if rootCounselId is set.
-                           // But if we did, we might want to assign to Pastor.
-                           // The AssignCounsels component will pass 'activeCounselId' which should be the Pastor's ID.
+                           const updates = ids.map(id => ({
+                              id,
+                              data: { assignedCounselId: targetId }
+                           }));
+                           props.updateMembers(updates);
+                           alert(`${ids.length} members have been assigned successfully.`);
                         }}
                         onRemoveMember={(id, isCounselRole) => {
                            // If removing from assignment, set to null (which converts to DB NULL)

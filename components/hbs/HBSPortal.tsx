@@ -1,7 +1,5 @@
-
 import React, { useState } from 'react';
-import { HBSGroup, HBSMember, HBSSession } from '../../types';
-import { MOCK_SESSIONS, MOCK_GROUPS, MOCK_MEMBERS } from '../../data/mockHBS';
+import { HBSGroup, HBSMember, HBSSession, Member, PastoralNote } from '../../types';
 import {
   LayoutDashboard, Users, Calendar, Settings, Bell, Search,
   Phone, AlertTriangle, Flag, ChevronLeft, ChevronRight,
@@ -54,7 +52,19 @@ const MOCK_PAST_SESSIONS: HBSSession[] = [
 
 type NavItem = 'dashboard' | 'members' | 'sessions' | 'settings';
 
-export const HBSPortal = () => {
+interface Props {
+  groups: HBSGroup[];
+  members: Member[];
+  updateMember: (id: string, updates: Partial<Member>) => Promise<void>;
+  submitNote: (noteData: any) => Promise<void>;
+  fetchMemberNotes: (memberId: string) => Promise<PastoralNote[]>;
+}
+
+export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, submitNote, fetchMemberNotes }) => {
+  // Member View State
+  const [viewingMember, setViewingMember] = useState<Member | null>(null);
+  const [currentMemberNotes, setCurrentMemberNotes] = useState<PastoralNote[]>([]);
+
   const [activeNav, setActiveNav] = useState<NavItem>('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -85,7 +95,122 @@ export const HBSPortal = () => {
   // Add Group Member state
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
-  const [groupMembers, setGroupMembers] = useState(MOCK_DIRECTORY_MEMBERS);
+
+  // Login State
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [activeGroup, setActiveGroup] = useState<HBSGroup | null>(null);
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    const group = groups.find(g => g.name.trim().toLowerCase() === loginUsername.trim().toLowerCase());
+
+    if (group) {
+      if (loginPassword === '1234') {
+        setActiveGroup(group);
+        setIsAuthenticated(true);
+        setLoginError('');
+      } else {
+        setLoginError('Invalid password.');
+      }
+    } else {
+      setLoginError('Cell group not found. Please check the name.');
+    }
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md">
+          <div className="mx-auto h-12 w-12 bg-black text-white rounded-xl flex items-center justify-center">
+            <Users size={24} />
+          </div>
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+            HBS Portal Login
+          </h2>
+          <p className="mt-2 text-center text-sm text-gray-600">
+            Enter your cell group name to access the dashboard
+          </p>
+        </div>
+
+        <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+          <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
+            <form className="space-y-6" onSubmit={handleLogin}>
+              <div>
+                <label htmlFor="username" className="block text-sm font-medium text-gray-700">
+                  Cell Group Name
+                </label>
+                <div className="mt-1">
+                  <input
+                    id="username"
+                    name="username"
+                    type="text"
+                    required
+                    value={loginUsername}
+                    onChange={(e) => setLoginUsername(e.target.value)}
+                    className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-black focus:border-black sm:text-sm"
+                    placeholder="e.g. Arat Kilo Group"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+                  Password
+                </label>
+                <div className="mt-1">
+                  <input
+                    id="password"
+                    name="password"
+                    type="password"
+                    required
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-black focus:border-black sm:text-sm"
+                    placeholder="hint: 1234"
+                  />
+                </div>
+              </div>
+
+              {loginError && (
+                <div className="p-2 bg-red-50 border border-red-100 rounded text-red-600 text-sm flex items-center gap-2">
+                  <AlertTriangle size={16} />
+                  {loginError}
+                </div>
+              )}
+
+              <div>
+                <button
+                  type="submit"
+                  className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-black hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black"
+                >
+                  Sign in
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Safe to access activeGroup here because if not authenticated we returned above.
+  const currentGroup = activeGroup!;
+
+  // Real data derivation
+  const groupMembers = members.filter(m => m.assignedGroupId === currentGroup.id);
+
+  // Add Member: Searchable members are those NOT in the current group
+  const searchableMembers = members.filter(m =>
+    m.assignedGroupId !== currentGroup.id &&
+    (
+      m.firstName.toLowerCase().includes(memberSearchQuery.toLowerCase()) ||
+      m.lastName.toLowerCase().includes(memberSearchQuery.toLowerCase()) ||
+      m.mobilePhone.includes(memberSearchQuery)
+    )
+  ).slice(0, 10); // Limit results
 
   const handleOpenNoteModal = (memberId: string) => {
     setSelectedMemberForNote(memberId);
@@ -93,52 +218,58 @@ export const HBSPortal = () => {
     setShowNoteModal(true);
   };
 
-  const handleSubmitNote = () => {
-    // In a real app, save the note to the backend
-    console.log('Note/Question submitted:', { memberId: selectedMemberForNote, ...memberNote });
+  const handleSubmitNote = async () => {
+    if (!selectedMemberForNote || !currentGroup) return;
 
-    // Simulate notification to pastor
-    alert(`Question submitted for ${MOCK_DIRECTORY_MEMBERS.find(m => m.id === selectedMemberForNote)?.fullName}. Pastor has been notified.`);
+    const notePayload = {
+      memberId: selectedMemberForNote,
+      authorId: currentGroup.leaderId,
+      title: memberNote.title,
+      content: memberNote.note,
+      noteType: 'question',
+      location: 'Church Office', // Default or derived
+      category: 'General',
+      isRedFlag: memberNote.isRedFlag,
+      status: 'new'
+    };
+
+    await submitNote(notePayload);
 
     setShowNoteModal(false);
     setSelectedMemberForNote(null);
     setMemberNote({ title: '', note: '', isRedFlag: false });
   };
 
-  const currentGroup = MOCK_GROUPS[0]; // For demo, use first group
+
 
   const activeSession = upcomingSessions.find(s => s.sessionDate === '2025-12-22');
   const nextDisplaySession = activeSession || upcomingSessions[0];
 
   const filteredMembers = groupMembers.filter(member => {
-    const matchesSearch = member.fullName.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesRedFlag = !showRedFlagOnly || member.status === 'Red Flag';
-    const matchesLowPart = !showLowParticipation || member.participationScore < 30;
-    const matchesScore = member.participationScore >= participationFilter;
+    const fullName = `${member.firstName} ${member.lastName}`;
+    const matchesSearch = fullName.toLowerCase().includes(searchTerm.toLowerCase());
+    // Mock red flag / participation logic as fields might be missing in basic member data
+    const matchesRedFlag = !showRedFlagOnly || member.isRedFlagged;
+    const matchesLowPart = !showLowParticipation || (member.participationScore || 0) < 30;
+    const matchesScore = (member.participationScore || 0) >= participationFilter;
     return matchesSearch && matchesRedFlag && matchesLowPart && matchesScore;
   });
 
-  const searchableMembers = MOCK_REGISTERED_MEMBERS.filter(m =>
-    !groupMembers.find(gm => gm.fullName === m.fullName) &&
-    (m.fullName.toLowerCase().includes(memberSearchQuery.toLowerCase()) ||
-      m.mobilePhone.includes(memberSearchQuery))
-  );
 
-  const handleAddMemberToGroup = (member: typeof MOCK_REGISTERED_MEMBERS[0]) => {
-    const newGroupMember = {
-      id: member.id,
-      fullName: member.fullName,
-      email: member.email,
-      mobilePhone: member.mobilePhone,
-      participationScore: 100, // New members start with high potential!
-      status: 'Active' as const,
-      role: 'Member' as const
-    };
 
-    setGroupMembers([...groupMembers, newGroupMember]);
-    setShowAddMemberModal(false);
-    setMemberSearchQuery('');
-    alert(`${member.fullName} has been added to the group!`);
+  const handleViewMember = async (member: Member) => {
+    setViewingMember(member);
+    const notes = await fetchMemberNotes(member.id);
+    setCurrentMemberNotes(notes);
+  };
+
+  const handleAddMemberToGroup = async (member: Member) => {
+    if (confirm(`Are you sure you want to add ${member.firstName} ${member.lastName} to ${currentGroup.name}?`)) {
+      await updateMember(member.id, { assignedGroupId: currentGroup.id });
+      setShowAddMemberModal(false);
+      setMemberSearchQuery('');
+      alert(`${member.firstName} has been added to the group.`);
+    }
   };
 
   const NavButton = ({ id, label, icon: Icon }: { id: NavItem, label: string, icon: any }) => (
@@ -212,7 +343,7 @@ export const HBSPortal = () => {
             </h1>
             {activeNav === 'members' && (
               <span className="bg-amber-100 text-amber-800 text-xs font-medium px-2 py-1 rounded">
-                Zone Alpha - Cell 3
+                Zone {groups.find(g => g.id === currentGroup.id)?.zoneId || '...'} - {currentGroup.name}
               </span>
             )}
           </div>
@@ -229,7 +360,7 @@ export const HBSPortal = () => {
             )}
             {activeNav === 'members' && (
               <div className="flex items-center gap-2 bg-gray-900 text-white px-3 py-1.5 rounded-lg text-sm">
-                <span className="font-bold">{MOCK_DIRECTORY_MEMBERS.length}</span>
+                <span className="font-bold">{groupMembers.length}</span>
                 <span>Total Members</span>
               </div>
             )}
@@ -251,8 +382,8 @@ export const HBSPortal = () => {
             <div className="space-y-6 animate-fadeIn">
               {/* Group Overview Header */}
               <div className="mb-6">
-                <h2 className="text-2xl font-bold text-gray-900">Group Alpha Overview</h2>
-                <p className="text-amber-700">Weekly Bible Study Group - Led by <span className="font-medium">Pastor Johnson</span></p>
+                <h2 className="text-2xl font-bold text-gray-900">{currentGroup.name} Overview</h2>
+                <p className="text-amber-700">Weekly Bible Study Group - Location: <span className="font-medium">{currentGroup.location}</span></p>
               </div>
 
               {/* KPI Cards */}
@@ -299,8 +430,8 @@ export const HBSPortal = () => {
                     <span className="text-sm text-gray-500">Active Members</span>
                     <Users size={16} className="text-gray-400" />
                   </div>
-                  <p className="text-4xl font-bold text-gray-900">18</p>
-                  <p className="text-sm text-green-600 mt-1">↑ +2 this month</p>
+                  <p className="text-4xl font-bold text-gray-900">{groupMembers.length}</p>
+                  <p className="text-sm text-green-600 mt-1">Total Members</p>
                 </div>
 
                 {/* Next Session */}
@@ -326,14 +457,14 @@ export const HBSPortal = () => {
 
                       <p className="text-sm font-bold text-amber-700 mb-1 line-clamp-1">{nextDisplaySession.topic}</p>
                       <p className="text-xs text-gray-400 font-medium">
-                        Leader: <span className="text-gray-900">{MOCK_DIRECTORY_MEMBERS.find(m => m.id === nextDisplaySession.discussionLeaderId)?.fullName || 'TBD'}</span>
+                        Leader: <span className="text-gray-900">{members.find(m => m.id === nextDisplaySession.discussionLeaderId)?.firstName || 'TBD'}</span>
                       </p>
 
                       {activeSession ? (
                         <button
                           onClick={() => {
                             const initialAttendance: Record<string, boolean> = {};
-                            MOCK_DIRECTORY_MEMBERS.forEach(m => initialAttendance[m.id] = false);
+                            groupMembers.forEach(m => initialAttendance[m.id] = false);
                             setAttendanceData(initialAttendance);
                             setShowAttendanceModal(true);
                           }}
@@ -481,7 +612,7 @@ export const HBSPortal = () => {
                 <div className="p-5 border-b border-gray-200 flex items-center justify-between">
                   <h3 className="font-bold text-gray-900">Group Members</h3>
                   <div className="flex items-center gap-2 text-sm text-gray-500">
-                    Showing {filteredMembers.length} of {MOCK_DIRECTORY_MEMBERS.length} members
+                    Showing {filteredMembers.length} of {groupMembers.length} members
                     <button className="p-1.5 hover:bg-gray-100 rounded"><Download size={16} /></button>
                   </div>
                 </div>
@@ -502,11 +633,11 @@ export const HBSPortal = () => {
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 bg-gray-200 rounded-full overflow-hidden">
-                              <img src={`https://ui-avatars.com/api/?name=${member.fullName}&background=e5e7eb`} alt="" className="w-full h-full" />
+                              <img src={member.photoUrl || `https://ui-avatars.com/api/?name=${member.firstName}+${member.lastName}&background=e5e7eb`} alt="" className="w-full h-full" />
                             </div>
                             <div>
-                              <p className="font-medium text-amber-700">{member.fullName}</p>
-                              <p className="text-xs text-gray-500">{member.email}</p>
+                              <p className="font-medium text-amber-700">{member.firstName} {member.lastName}</p>
+                              <p className="text-xs text-gray-500">{member.primaryEmail}</p>
                             </div>
                           </div>
                         </td>
@@ -518,28 +649,32 @@ export const HBSPortal = () => {
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-gray-900">{member.participationScore}</span>
+                            <span className="text-sm font-medium text-gray-900">{member.participationScore || 0}</span>
                             <div className="w-20 h-2 bg-gray-200 rounded-full overflow-hidden">
                               <div
-                                className={`h-full rounded-full ${member.participationScore > 70 ? 'bg-gray-900' : member.participationScore > 40 ? 'bg-gray-600' : 'bg-gray-400'}`}
-                                style={{ width: `${member.participationScore}%` }}
+                                className={`h-full rounded-full ${(member.participationScore || 0) > 70 ? 'bg-gray-900' : (member.participationScore || 0) > 40 ? 'bg-gray-600' : 'bg-gray-400'}`}
+                                style={{ width: `${(member.participationScore || 0)}%` }}
                               ></div>
                             </div>
                           </div>
                         </td>
                         <td className="px-6 py-4">
                           {member.status === 'Active' && <span className="text-sm text-gray-600">Active</span>}
-                          {member.status === 'Red Flag' && (
+                          {member.isRedFlagged && (
                             <span className="inline-flex items-center gap-1 text-sm text-red-600">
                               <Flag size={12} />
                               Red Flag
                             </span>
                           )}
-                          {member.status === 'Moderate' && <span className="text-sm text-gray-500">Moderate</span>}
+                          {/* {member.status === 'Moderate' && <span className="text-sm text-gray-500">Moderate</span>} */}
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
-                            <button className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600">
+                            <button
+                              onClick={() => handleViewMember(member)}
+                              className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600"
+                              title="View Member History"
+                            >
                               <User size={16} />
                             </button>
                             <button
@@ -641,7 +776,7 @@ export const HBSPortal = () => {
                           </div>
                           <div className="flex items-center gap-2">
                             <User size={14} className="text-gray-400" />
-                            Leader: {MOCK_DIRECTORY_MEMBERS.find(m => m.id === session.discussionLeaderId)?.fullName || 'TBD'}
+                            Leader: {members.find(m => m.id === session.discussionLeaderId)?.firstName || 'TBD'}
                           </div>
                         </div>
                       </div>
@@ -1169,10 +1304,10 @@ export const HBSPortal = () => {
                       >
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-500 font-bold group-hover:bg-amber-100 group-hover:text-amber-700">
-                            {member.fullName.split(' ').map(n => n[0]).join('')}
+                            {(member.firstName + ' ' + member.lastName).split(' ').map(n => n[0]).join('')}
                           </div>
                           <div>
-                            <p className="text-sm font-bold text-gray-900">{member.fullName}</p>
+                            <p className="text-sm font-bold text-gray-900">{member.firstName} {member.lastName}</p>
                             <p className="text-[10px] text-gray-500 font-medium">{member.mobilePhone}</p>
                           </div>
                         </div>
@@ -1205,6 +1340,66 @@ export const HBSPortal = () => {
           </div>
         </div>
       )}
-    </div >
+      {/* VIEW MEMBER MODAL */}
+      {viewingMember && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="font-bold text-lg flex items-center gap-2">
+                <User size={20} />
+                {viewingMember.firstName} {viewingMember.lastName}
+              </h3>
+              <button
+                onClick={() => setViewingMember(null)}
+                className="p-1 hover:bg-gray-100 rounded-full text-gray-400"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto">
+              <div className="mb-6 flex gap-4">
+                <div className="w-16 h-16 bg-gray-200 rounded-full overflow-hidden flex-shrink-0">
+                  <img
+                    src={viewingMember.photoUrl || `https://ui-avatars.com/api/?name=${viewingMember.firstName}+${viewingMember.lastName}&background=e5e7eb`}
+                    alt=""
+                    className="w-full h-full"
+                  />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Phone: <span className="text-gray-900 font-medium">{viewingMember.mobilePhone}</span></p>
+                  <p className="text-sm text-gray-500">Email: <span className="text-gray-900 font-medium">{viewingMember.primaryEmail}</span></p>
+                  <p className="text-sm text-gray-500">Status: <span className={`font-medium ${viewingMember.isRedFlagged ? 'text-red-600' : 'text-green-600'}`}>{viewingMember.isRedFlagged ? 'Red Flag' : 'Active'}</span></p>
+                </div>
+              </div>
+
+              <h4 className="font-bold text-gray-900 mb-3 border-b pb-2">Question & Note History</h4>
+
+              {currentMemberNotes.length === 0 ? (
+                <p className="text-gray-500 text-sm italic py-4 text-center">No questions or notes recorded yet.</p>
+              ) : (
+                <div className="space-y-4">
+                  {currentMemberNotes.map(note => (
+                    <div key={note.id} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                      <div className="flex justify-between items-start mb-1">
+                        <p className="text-sm font-bold text-gray-900">{note.title}</p>
+                        <span className="text-xs text-gray-500">{new Date(note.date).toLocaleDateString()}</span>
+                      </div>
+                      <p className="text-sm text-gray-600 mb-2">{note.description}</p>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className={`px-2 py-0.5 rounded-full ${note.type === 'question' ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-700'}`}>
+                          {note.type}
+                        </span>
+                        <span className="text-gray-400">By {note.loggedBy}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };

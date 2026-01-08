@@ -158,6 +158,7 @@ export interface HBSMember {
 }
 
 export interface Zone {
+  id: string;
   name: string;
   area: string;
 }
@@ -165,7 +166,7 @@ export interface Zone {
 export interface HBSGroup {
   id: string;
   name: string;
-  zone: string;
+  zoneId: string;
   location: string;
   leaderId: string;
   meetingDay: string;
