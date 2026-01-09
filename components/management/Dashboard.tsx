@@ -1,34 +1,92 @@
 
 import React from 'react';
-import { Member } from '../../types';
+import { Member, HBSGroup, Zone } from '../../types';
 import { Users, MapPin, AlertTriangle, Activity, MoreHorizontal, Calendar, ArrowRight, UserPlus, Flag, ArrowRightLeft } from 'lucide-react';
 
 interface Props {
    members: Member[];
+   zones: Zone[];
+   groups: HBSGroup[];
    onNavigate: (tab: 'dashboard' | 'members' | 'structure' | 'settings' | 'register', filters?: any) => void;
 }
 
-export const Dashboard: React.FC<Props> = ({ members, onNavigate }) => {
+export const Dashboard: React.FC<Props> = ({ members, zones, groups, onNavigate }) => {
    const totalMembers = members.length;
-   const activeMembers = members.filter(m => m.status === 'Active');
-   const redFlagged = members.filter(m => m.isRedFlagged).length;
-   const avgParticipation = Math.round(members.reduce((acc, m) => acc + (m.participationScore || 0), 0) / (totalMembers || 1));
+   const activeMembersCount = members.filter(m => m.status === 'Active').length;
+   const redFlaggedCount = members.filter(m => m.isRedFlagged).length;
+   const avgParticipation = totalMembers > 0
+      ? Math.round(members.reduce((acc, m) => acc + (m.participationScore || 0), 0) / totalMembers)
+      : 0;
 
    // Gender Distribution
    const maleCount = members.filter(m => m.gender === 'Male').length;
    const femaleCount = members.filter(m => m.gender === 'Female').length;
-   const malePercentage = Math.round((maleCount / totalMembers) * 100);
-   const femalePercentage = Math.round((femaleCount / totalMembers) * 100);
+   const unknownGenderCount = totalMembers - (maleCount + femaleCount);
+   const malePercentage = totalMembers > 0 ? Math.round((maleCount / totalMembers) * 100) : 0;
+   const femalePercentage = totalMembers > 0 ? Math.round((femaleCount / totalMembers) * 100) : 0;
 
-   // Age Group Distribution (Mock)
-   const ageGroups = {
-      '0-12': 156,
-      '13-18': 243,
-      '19-35': 387,
-      '36-50': 298,
-      '51-65': 112,
-      '65+': 51
+   // Age Group Distribution
+   const calculateAge = (dateStr?: string) => {
+      if (!dateStr) return -1;
+      try {
+         const birth = new Date(dateStr);
+         if (isNaN(birth.getTime())) return -1;
+         const today = new Date();
+         let age = today.getFullYear() - birth.getFullYear();
+         const m = today.getMonth() - birth.getMonth();
+         if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+         return age;
+      } catch (e) { return -1; }
    };
+
+   const ageGroups = {
+      '0-12': members.filter(m => { const a = calculateAge(m.birthDate); return a >= 0 && a <= 12; }).length,
+      '13-18': members.filter(m => { const a = calculateAge(m.birthDate); return a > 12 && a <= 18; }).length,
+      '19-35': members.filter(m => { const a = calculateAge(m.birthDate); return a > 18 && a <= 35; }).length,
+      '36-50': members.filter(m => { const a = calculateAge(m.birthDate); return a > 35 && a <= 50; }).length,
+      '51-65': members.filter(m => { const a = calculateAge(m.birthDate); return a > 50 && a <= 65; }).length,
+      '65+': members.filter(m => { const a = calculateAge(m.birthDate); return a > 65; }).length
+   };
+
+   const maxAgeCount = Math.max(...Object.values(ageGroups), 1);
+
+   // Membership Growth (Last 6 Months)
+   const last6Months = Array.from({ length: 6 }, (_, i) => {
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      return {
+         month: d.toLocaleString('default', { month: 'short' }),
+         year: d.getFullYear(),
+         monthIdx: d.getMonth()
+      };
+   }).reverse();
+
+   const growthData = last6Months.map(m => {
+      return members.filter(mem => {
+         if (!mem.registrationDate) return false;
+         const reg = new Date(mem.registrationDate);
+         return reg.getMonth() === m.monthIdx && reg.getFullYear() === m.year;
+      }).length;
+   });
+
+   const totalGrowth = growthData.reduce((a, b) => a + b, 0);
+   const growthRate = totalMembers > 0 ? ((totalGrowth / (totalMembers || 1)) * 100).toFixed(1) : '0';
+
+   // Recent Activities (Derived from recent registrations and flagged members)
+   const recentActivities = [
+      ...members.slice(0, 3).map(m => ({
+         icon: UserPlus,
+         title: "New Member Added",
+         desc: `${m.firstName} ${m.lastName} joined`,
+         time: m.registrationDate ? new Date(m.registrationDate).toLocaleDateString() : 'Recently'
+      })),
+      ...members.filter(m => m.isRedFlagged).slice(0, 2).map(m => ({
+         icon: AlertTriangle,
+         title: "Follow-Up Required",
+         desc: `${m.firstName} marked with red flag`,
+         time: "Action needed"
+      }))
+   ].slice(0, 4);
 
    const KpiCard = ({ title, value, subtext, icon: Icon, colorClass, trend, trendColor, onClick }: any) => (
       <div
@@ -75,7 +133,7 @@ export const Dashboard: React.FC<Props> = ({ members, onNavigate }) => {
             />
             <KpiCard
                title="Zones & Cells"
-               value="24 / 156"
+               value={`${zones.length} / ${groups.length}`}
                subtext="Active Structure"
                icon={MapPin}
                colorClass="bg-cyan-500"
@@ -85,7 +143,7 @@ export const Dashboard: React.FC<Props> = ({ members, onNavigate }) => {
             />
             <KpiCard
                title="Need Follow-Up"
-               value={redFlagged}
+               value={redFlaggedCount}
                icon={AlertTriangle}
                colorClass="bg-rose-500"
                trend="Urgent"
@@ -152,7 +210,7 @@ export const Dashboard: React.FC<Props> = ({ members, onNavigate }) => {
 
                <div className="flex justify-between items-end h-64 px-4 gap-4">
                   {Object.entries(ageGroups).map(([group, count]) => {
-                     const height = Math.max(10, Math.round((count / 400) * 100));
+                     const height = Math.max(5, Math.round((count / (maxAgeCount || 1)) * 100));
                      return (
                         <div key={group} className="flex flex-col items-center gap-2 flex-1">
                            <div className="w-full bg-blue-50 rounded-t-lg relative group h-full flex items-end">
@@ -186,10 +244,13 @@ export const Dashboard: React.FC<Props> = ({ members, onNavigate }) => {
                </div>
 
                <div className="h-48 flex items-end relative border-b border-slate-100">
-                  {/* Simulated Curve with Blue Theme */}
+                  {/* Real Curve based on growthData */}
                   <svg className="absolute inset-0 w-full h-full overflow-visible" preserveAspectRatio="none">
-                     <path d="M0,150 C100,140 200,100 300,80 S500,20 600,0" fill="none" stroke="#3B82F6" strokeWidth="3" vectorEffect="non-scaling-stroke" />
-                     <path d="M0,150 C100,140 200,100 300,80 S500,20 600,0 V180 H0 Z" fill="url(#blueGradient)" opacity="0.15" />
+                     <path
+                        d={`M0,${150 - (growthData[0] || 0) * 10} ${growthData.map((v, i) => `L${(i * 100)},${150 - v * 10}`).join(' ')}`}
+                        fill="none" stroke="#3B82F6" strokeWidth="3" vectorEffect="non-scaling-stroke"
+                     />
+                     <path d={`M0,${150 - (growthData[0] || 0) * 10} ${growthData.map((v, i) => `L${(i * 100)},${150 - v * 10}`).join(' ')} V180 H0 Z`} fill="url(#blueGradient)" opacity="0.15" />
                      <defs>
                         <linearGradient id="blueGradient" x1="0" x2="0" y1="0" y2="1">
                            <stop offset="0%" stopColor="#3B82F6" />
@@ -200,18 +261,18 @@ export const Dashboard: React.FC<Props> = ({ members, onNavigate }) => {
 
                   {/* X Axis Labels */}
                   <div className="w-full flex justify-between text-xs text-slate-400 absolute -bottom-6 font-medium">
-                     <span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span>
+                     {last6Months.map(m => <span key={m.month}>{m.month}</span>)}
                   </div>
                </div>
 
                <div className="flex justify-between items-end mt-12">
                   <div>
-                     <p className="text-slate-400 text-xs mb-1 font-medium">Total Growth</p>
-                     <p className="text-2xl font-bold text-slate-800">+187</p>
+                     <p className="text-slate-400 text-xs mb-1 font-medium">Total (Last 6 Months)</p>
+                     <p className="text-2xl font-bold text-slate-800">+{totalGrowth}</p>
                   </div>
                   <div className="text-right">
-                     <p className="text-slate-400 text-xs mb-1 font-medium">Growth Rate</p>
-                     <p className="text-2xl font-bold text-blue-600">+17.6%</p>
+                     <p className="text-slate-400 text-xs mb-1 font-medium">Relative Growth</p>
+                     <p className="text-2xl font-bold text-blue-600">{growthRate}%</p>
                   </div>
                </div>
             </div>
@@ -224,12 +285,7 @@ export const Dashboard: React.FC<Props> = ({ members, onNavigate }) => {
                </div>
 
                <div className="space-y-6">
-                  {[
-                     { icon: UserPlus, title: "New Member Added", desc: "Sarah Johnson joined Zone 3, Cell 12", time: "2 hours ago" },
-                     { icon: Calendar, title: "Event Completed", desc: "Youth Service - 87 attendees", time: "5 hours ago" },
-                     { icon: Flag, title: "Follow-Up Required", desc: "3 members need pastoral care", time: "1 day ago" },
-                     { icon: ArrowRightLeft, title: "Transfer Request", desc: "Mark Davis - Zone 2 to Zone 5", time: "2 days ago" }
-                  ].map((item, idx) => (
+                  {recentActivities.length > 0 ? recentActivities.map((item, idx) => (
                      <div key={idx} className="flex gap-4 group cursor-default">
                         <div className="w-10 h-10 rounded-xl bg-blue-50 group-hover:bg-blue-100 flex items-center justify-center text-blue-600 transition-colors shrink-0">
                            <item.icon size={20} />
@@ -240,7 +296,9 @@ export const Dashboard: React.FC<Props> = ({ members, onNavigate }) => {
                            <p className="text-xs text-slate-400 mt-1 font-medium">{item.time}</p>
                         </div>
                      </div>
-                  ))}
+                  )) : (
+                     <div className="text-center py-10 text-slate-400 italic">No recent activities</div>
+                  )}
                </div>
             </div>
          </div>

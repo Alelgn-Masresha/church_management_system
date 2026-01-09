@@ -58,9 +58,16 @@ interface Props {
   updateMember: (id: string, updates: Partial<Member>) => Promise<void>;
   submitNote: (noteData: any) => Promise<void>;
   fetchMemberNotes: (memberId: string) => Promise<PastoralNote[]>;
+  fetchSessions: (groupId: string) => Promise<HBSSession[]>;
+  scheduleSession: (sessionData: any) => Promise<HBSSession>;
+  updateSession: (id: string, sessionData: any) => Promise<HBSSession>;
+  recordAttendance: (sessionId: string, attendanceData: any) => Promise<void>;
 }
 
-export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, submitNote, fetchMemberNotes }) => {
+export const HBSPortal: React.FC<Props> = ({
+  groups, members, updateMember, submitNote, fetchMemberNotes,
+  fetchSessions, scheduleSession, updateSession, recordAttendance
+}) => {
   // Member View State
   const [viewingMember, setViewingMember] = useState<Member | null>(null);
   const [currentMemberNotes, setCurrentMemberNotes] = useState<PastoralNote[]>([]);
@@ -78,14 +85,16 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
   const [sessionTab, setSessionTab] = useState<'upcoming' | 'past' | 'active'>('active');
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [editingSession, setEditingSession] = useState<HBSSession | null>(null);
-  const [newSession, setNewSession] = useState({ topic: '', date: '', time: '10:00', leaderId: '' });
+  const [newSession, setNewSession] = useState({ topic: '', date: '', startTime: '18:00', endTime: '20:00', leaderId: '' });
 
   // Attendance & Sessions state
-  const [upcomingSessions, setUpcomingSessions] = useState<HBSSession[]>(MOCK_UPCOMING_SESSIONS);
-  const [pastSessions, setPastSessions] = useState<HBSSession[]>(MOCK_PAST_SESSIONS);
+  const [upcomingSessions, setUpcomingSessions] = useState<HBSSession[]>([]);
+  const [pastSessions, setPastSessions] = useState<HBSSession[]>([]);
+  const [activeSessions, setActiveSessions] = useState<HBSSession[]>([]);
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
   const [attendanceData, setAttendanceData] = useState<Record<string, boolean>>({});
   const [nextLeaderId, setNextLeaderId] = useState<string>('');
+  const [nextTopic, setNextTopic] = useState<string>('');
 
   // Member Note Modal state
   const [showNoteModal, setShowNoteModal] = useState(false);
@@ -103,7 +112,7 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const group = groups.find(g => g.name.trim().toLowerCase() === loginUsername.trim().toLowerCase());
 
@@ -112,6 +121,24 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
         setActiveGroup(group);
         setIsAuthenticated(true);
         setLoginError('');
+
+        // Fetch real sessions for this group
+        const sessions = await fetchSessions(group.id);
+        const today = new Date();
+        const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+        const upcoming = sessions
+          .filter(s => s.sessionDate > todayStr && s.status === 'Scheduled')
+          .sort((a, b) => a.sessionDate.localeCompare(b.sessionDate));
+        const past = sessions
+          .filter(s => s.sessionDate < todayStr || s.status === 'Completed')
+          .sort((a, b) => b.sessionDate.localeCompare(a.sessionDate));
+        const active = sessions.filter(s => s.sessionDate === todayStr && s.status === 'Scheduled');
+
+        setUpcomingSessions(upcoming);
+        setPastSessions(past);
+        setActiveSessions(active);
+
       } else {
         setLoginError('Invalid password.');
       }
@@ -235,6 +262,12 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
 
     await submitNote(notePayload);
 
+    // Refresh notes if we are currently viewing this member
+    if (viewingMember && viewingMember.id === selectedMemberForNote) {
+      const notes = await fetchMemberNotes(selectedMemberForNote);
+      setCurrentMemberNotes(notes);
+    }
+
     setShowNoteModal(false);
     setSelectedMemberForNote(null);
     setMemberNote({ title: '', note: '', isRedFlag: false });
@@ -242,7 +275,7 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
 
 
 
-  const activeSession = upcomingSessions.find(s => s.sessionDate === '2025-12-22');
+  const activeSession = activeSessions[0];
   const nextDisplaySession = activeSession || upcomingSessions[0];
 
   const filteredMembers = groupMembers.filter(member => {
@@ -272,6 +305,12 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
     }
   };
 
+  const getParticipationScore = (memberId: string) => {
+    if (pastSessions.length === 0) return 0;
+    const attendedSessions = pastSessions.filter(s => s.attendance && s.attendance[memberId]);
+    return Math.round((attendedSessions.length / pastSessions.length) * 100);
+  };
+
   const NavButton = ({ id, label, icon: Icon }: { id: NavItem, label: string, icon: any }) => (
     <button
       onClick={() => setActiveNav(id)}
@@ -289,9 +328,73 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
   );
 
   const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
+    if (!dateStr) return '';
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
     return date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   };
+
+  const getDateParts = (dateStr: string) => {
+    if (!dateStr) return { month: '', day: '' };
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+    return {
+      month: date.toLocaleDateString('en-US', { month: 'short' }),
+      day: date.getDate()
+    };
+  };
+
+  // --- Dynamic Dashboard Calculations ---
+  const groupAvgScore = groupMembers.length > 0
+    ? Math.round(groupMembers.reduce((acc, m) => acc + getParticipationScore(m.id), 0) / groupMembers.length)
+    : 0;
+
+  const attendanceTrend = pastSessions.slice(0, 5).reverse().map(s => {
+    const presentCount = s.attendance ? Object.values(s.attendance).filter(Boolean).length : 0;
+    const total = groupMembers.length || 1;
+    return Math.round((presentCount / total) * 100);
+  });
+
+  const avgAttendance = pastSessions.length > 0
+    ? Math.round(pastSessions.reduce((acc, s) => {
+      const presentCount = s.attendance ? Object.values(s.attendance).filter(Boolean).length : 0;
+      return acc + (presentCount || 0);
+    }, 0) / pastSessions.length)
+    : 0;
+
+  const nextSession = activeSessions[0] || upcomingSessions[0];
+
+  const getRelativeTime = (dateStr: string) => {
+    if (!dateStr) return '';
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const target = new Date(y, m - 1, d);
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const diffTime = target.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Tomorrow';
+    if (diffDays < 0) return `${Math.abs(diffDays)} days ago`;
+    return `Starts in ${diffDays} days`;
+  };
+
+  const dynamicRedFlags = groupMembers
+    .filter(m => getParticipationScore(m.id) < 40)
+    .map(m => ({
+      id: m.id,
+      name: `${m.firstName} ${m.lastName}`,
+      issue: `Low participation score (${getParticipationScore(m.id)})`,
+      lastSeen: pastSessions.find(s => s.attendance?.[m.id]) ? formatDate(pastSessions.find(s => s.attendance?.[m.id])!.sessionDate) : 'Never'
+    }))
+    .slice(0, 3);
+
+  const dynamicActivities = pastSessions.slice(0, 4).map(s => ({
+    id: s.id,
+    text: `Attendance marked for ${s.topic}`,
+    time: getRelativeTime(s.sessionDate),
+    avatar: s.leaderFirstName ? s.leaderFirstName[0] : 'S'
+  }));
 
   return (
     <div className="flex h-full min-h-[700px] bg-gray-50">
@@ -399,14 +502,16 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
                       <svg className="w-full h-full transform -rotate-90">
                         <circle cx="48" cy="48" r="40" stroke="#e5e7eb" strokeWidth="8" fill="none" />
                         <circle cx="48" cy="48" r="40" stroke="#1f2937" strokeWidth="8" fill="none"
-                          strokeDasharray={`${85 * 2.51} 251`} strokeLinecap="round" />
+                          strokeDasharray={`${groupAvgScore * 2.51} 251`} strokeLinecap="round" />
                       </svg>
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="text-2xl font-bold text-gray-900">85</span>
+                        <span className="text-2xl font-bold text-gray-900">{groupAvgScore}</span>
                       </div>
                     </div>
                   </div>
-                  <p className="text-center text-sm text-gray-500 mt-2">Above Average</p>
+                  <p className="text-center text-sm text-gray-500 mt-2">
+                    {groupAvgScore > 70 ? 'Excellent' : groupAvgScore > 40 ? 'Above Average' : 'Needs Attention'}
+                  </p>
                 </div>
 
                 {/* Attendance Trend */}
@@ -416,12 +521,14 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
                     <Activity size={16} className="text-gray-400" />
                   </div>
                   <div className="flex items-end justify-center gap-2 h-20">
-                    {[60, 80, 45, 90, 70].map((val, i) => (
+                    {attendanceTrend.length > 0 ? attendanceTrend.map((val, i) => (
                       <div key={i} className="w-6 bg-gray-900 rounded-t" style={{ height: `${val}%` }}></div>
-                    ))}
+                    )) : (
+                      <div className="h-full flex items-center text-gray-300 text-xs italic">No data yet</div>
+                    )}
                   </div>
-                  <p className="text-xs text-amber-700 mt-3">Last 4 sessions</p>
-                  <p className="text-lg font-bold text-gray-900">12 avg</p>
+                  <p className="text-xs text-amber-700 mt-3">Last {attendanceTrend.length} sessions</p>
+                  <p className="text-lg font-bold text-gray-900">{avgAttendance} avg</p>
                 </div>
 
                 {/* Active Members */}
@@ -443,24 +550,24 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
                     </div>
                   </div>
 
-                  {nextDisplaySession ? (
+                  {nextSession ? (
                     <>
                       <div className="flex flex-col gap-0.5 mb-3">
                         <p className="font-black text-2xl text-gray-900">
-                          {new Date(nextDisplaySession.sessionDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          {formatDate(nextSession.sessionDate)}
                         </p>
                         <p className="text-sm font-bold text-gray-500 uppercase flex items-center gap-1.5">
                           <Clock size={12} />
-                          10:00 AM
+                          {nextSession.startTime || '18:00'}
                         </p>
                       </div>
 
-                      <p className="text-sm font-bold text-amber-700 mb-1 line-clamp-1">{nextDisplaySession.topic}</p>
+                      <p className="text-sm font-bold text-amber-700 mb-1 line-clamp-1">{nextSession.topic}</p>
                       <p className="text-xs text-gray-400 font-medium">
-                        Leader: <span className="text-gray-900">{members.find(m => m.id === nextDisplaySession.discussionLeaderId)?.firstName || 'TBD'}</span>
+                        Leader: <span className="text-gray-900">{nextSession.leaderFirstName || 'TBD'}</span>
                       </p>
 
-                      {activeSession ? (
+                      {activeSessions.some(s => s.id === nextSession.id) ? (
                         <button
                           onClick={() => {
                             const initialAttendance: Record<string, boolean> = {};
@@ -480,13 +587,13 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
                             className="w-full bg-gray-100 text-gray-400 py-2.5 rounded-xl text-sm font-bold cursor-not-allowed flex items-center justify-center gap-2"
                           >
                             <Clock size={16} />
-                            Starts in 3 days
+                            {getRelativeTime(nextSession.sessionDate)}
                           </button>
                         </div>
                       )}
                     </>
                   ) : (
-                    <p className="text-sm text-gray-500 italic py-4">No sessions scheduled</p>
+                    <p className="text-sm text-gray-500 italic py-4 text-center">No sessions scheduled</p>
                   )}
                 </div>
               </div>
@@ -497,20 +604,21 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
                 <div className="bg-white rounded-xl border border-gray-200 p-5">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="font-bold text-gray-900">Red Flag Alerts</h3>
-                    <span className="bg-gray-100 text-gray-600 text-xs font-bold px-2 py-1 rounded-full">{MOCK_RED_FLAGS.length}</span>
+                    <span className="bg-gray-100 text-gray-600 text-xs font-bold px-2 py-1 rounded-full">{dynamicRedFlags.length}</span>
                   </div>
                   <div className="space-y-4">
-                    {MOCK_RED_FLAGS.map(flag => (
+                    {dynamicRedFlags.length > 0 ? dynamicRedFlags.map(flag => (
                       <div key={flag.id} className="flex gap-3 p-3 bg-gray-50 rounded-lg">
                         <AlertTriangle size={18} className="text-gray-400 mt-0.5 flex-shrink-0" />
                         <div>
                           <p className="font-medium text-gray-900">{flag.name}</p>
                           <p className="text-sm text-gray-600">{flag.issue}</p>
                           {flag.lastSeen && <p className="text-xs text-gray-400 mt-1">Last attended: {flag.lastSeen}</p>}
-                          {flag.note && <p className="text-xs text-gray-400 mt-1">{flag.note}</p>}
                         </div>
                       </div>
-                    ))}
+                    )) : (
+                      <div className="text-center py-6 text-gray-400 text-sm italic">No red flags detected</div>
+                    )}
                   </div>
                 </div>
 
@@ -521,7 +629,7 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
                     <button className="text-sm text-amber-700 hover:underline">View All</button>
                   </div>
                   <div className="space-y-4">
-                    {MOCK_ACTIVITIES.map(activity => (
+                    {dynamicActivities.length > 0 ? dynamicActivities.map(activity => (
                       <div key={activity.id} className="flex gap-3 items-start">
                         <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-xs font-bold text-gray-600 flex-shrink-0">
                           {activity.avatar}
@@ -531,7 +639,9 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
                           <p className="text-xs text-gray-400">{activity.time}</p>
                         </div>
                       </div>
-                    ))}
+                    )) : (
+                      <div className="text-center py-6 text-gray-400 text-sm italic">No recent activity</div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -649,11 +759,11 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-gray-900">{member.participationScore || 0}</span>
+                            <span className="text-sm font-medium text-gray-900">{getParticipationScore(member.id)}</span>
                             <div className="w-20 h-2 bg-gray-200 rounded-full overflow-hidden">
                               <div
-                                className={`h-full rounded-full ${(member.participationScore || 0) > 70 ? 'bg-gray-900' : (member.participationScore || 0) > 40 ? 'bg-gray-600' : 'bg-gray-400'}`}
-                                style={{ width: `${(member.participationScore || 0)}%` }}
+                                className={`h-full rounded-full ${getParticipationScore(member.id) > 70 ? 'bg-gray-900' : getParticipationScore(member.id) > 40 ? 'bg-gray-600' : 'bg-gray-400'}`}
+                                style={{ width: `${getParticipationScore(member.id)}%` }}
                               ></div>
                             </div>
                           </div>
@@ -772,7 +882,7 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
                           </div>
                           <div className="flex items-center gap-2">
                             <Clock size={14} className="text-gray-400" />
-                            10:00 AM - 11:30 AM
+                            {session.startTime || '18:00'} - {session.endTime || '20:00'}
                           </div>
                           <div className="flex items-center gap-2">
                             <User size={14} className="text-gray-400" />
@@ -787,7 +897,8 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
                             setNewSession({
                               topic: session.topic,
                               date: session.sessionDate,
-                              time: '10:00', // Mock time as it's not in the data structure yet
+                              startTime: session.startTime || '18:00',
+                              endTime: session.endTime || '20:00',
                               leaderId: session.discussionLeaderId
                             });
                             setShowScheduleModal(true);
@@ -808,7 +919,9 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
                       <div>
                         <div className="flex items-center gap-2">
                           <h3 className="text-lg font-semibold text-gray-700">{session.topic}</h3>
-                          <span className="bg-green-100 text-green-800 text-xs font-medium px-2 py-0.5 rounded">Completed</span>
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded ${session.status === 'Completed' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                            {session.status}
+                          </span>
                         </div>
                         <div className="mt-2 space-y-1 text-sm text-gray-500">
                           <div className="flex items-center gap-2">
@@ -817,7 +930,7 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
                           </div>
                           <div className="flex items-center gap-2">
                             <Users size={14} className="text-gray-400" />
-                            {Object.values(session.attendance).filter(Boolean).length} attended
+                            {session.attendance ? Object.values(session.attendance).filter(Boolean).length : 0} attended
                           </div>
                         </div>
                       </div>
@@ -827,15 +940,19 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
                 ))}
 
                 {sessionTab === 'active' && (
-                  <div className="animate-fadeIn">
-                    {upcomingSessions.filter(s => s.sessionDate === '2025-12-22').length > 0 ? (
-                      upcomingSessions.filter(s => s.sessionDate === '2025-12-22').map(session => (
+                  <div className="animate-fadeIn divide-y divide-gray-100">
+                    {activeSessions.length > 0 ? (
+                      activeSessions.map(session => (
                         <div key={session.id} className="p-8 bg-blue-50/30 border-l-4 border-blue-600">
                           <div className="flex items-center justify-between">
                             <div className="flex items-start gap-5">
                               <div className="w-16 h-16 bg-blue-600 rounded-2xl flex flex-col items-center justify-center text-white shadow-lg shadow-blue-200 text-center">
-                                <span className="text-[10px] font-bold uppercase tracking-widest opacity-80">Dec</span>
-                                <span className="text-2xl font-black leading-none">22</span>
+                                <span className="text-[10px] font-bold uppercase tracking-widest opacity-80">
+                                  {getDateParts(session.sessionDate).month}
+                                </span>
+                                <span className="text-2xl font-black leading-none">
+                                  {getDateParts(session.sessionDate).day}
+                                </span>
                               </div>
                               <div>
                                 <div className="flex items-center gap-3 mb-2">
@@ -848,41 +965,26 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
                                 <div className="flex flex-wrap gap-4 text-gray-600">
                                   <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-gray-100 shadow-sm text-sm">
                                     <Clock size={16} className="text-blue-500" />
-                                    <span className="font-bold">2:00 PM - 4:00 PM</span>
+                                    <span className="font-bold">{session.startTime || '10:00 AM'} - {session.endTime || '12:00 PM'}</span>
                                   </div>
                                   <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-gray-100 shadow-sm text-sm">
                                     <User size={16} className="text-blue-500" />
-                                    <span>Leader: <span className="font-bold text-gray-900">{MOCK_DIRECTORY_MEMBERS.find(m => m.id === session.discussionLeaderId)?.fullName}</span></span>
+                                    <span>Leader: <span className="font-bold text-gray-900">{members.find(m => m.id === session.discussionLeaderId)?.firstName} {members.find(m => m.id === session.discussionLeaderId)?.lastName}</span></span>
                                   </div>
                                   <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-gray-100 shadow-sm text-sm">
                                     <Users size={16} className="text-blue-500" />
-                                    <span className="font-bold">18 Registered</span>
+                                    <span className="font-bold">{groupMembers.length} Registered</span>
                                   </div>
                                 </div>
                               </div>
                             </div>
                             <div className="flex gap-3">
-                              {/* <button
-                                onClick={() => {
-                                  setEditingSession(session);
-                                  setNewSession({
-                                    topic: session.topic,
-                                    date: session.sessionDate,
-                                    time: '14:00',
-                                    leaderId: session.discussionLeaderId
-                                  });
-                                  setShowScheduleModal(true);
-                                }}
-                                className="px-6 py-3 bg-white border border-gray-200 text-gray-600 rounded-xl font-bold shadow-sm hover:bg-gray-50 transition-all flex items-center gap-2"
-                              >
-                                <Edit size={18} />
-                                Edit Session
-                              </button> */}
                               <button
                                 onClick={() => {
                                   const initialAttendance: Record<string, boolean> = {};
-                                  MOCK_DIRECTORY_MEMBERS.forEach(m => initialAttendance[m.id] = false);
+                                  groupMembers.forEach(m => initialAttendance[m.id] = false);
                                   setAttendanceData(initialAttendance);
+                                  setNextTopic(session.topic);
                                   setShowAttendanceModal(true);
                                 }}
                                 className="px-8 py-3 bg-gray-900 text-white rounded-xl font-bold shadow-xl shadow-gray-200 hover:bg-black transition-all hover:-translate-y-1 flex items-center gap-2"
@@ -937,7 +1039,7 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
               <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-900 text-white">
                 <div>
                   <h3 className="font-bold text-xl">Session Attendance</h3>
-                  <p className="text-gray-400 text-sm mt-1">{activeSession?.topic || 'Session'} • Dec 22, 2025 • {MOCK_DIRECTORY_MEMBERS.length} Total Members</p>
+                  <p className="text-gray-400 text-sm mt-1">{activeSession?.topic || 'Session'} • {activeSession ? formatDate(activeSession.sessionDate) : ''} • {groupMembers.length} Total Members</p>
                 </div>
                 <button onClick={() => setShowAttendanceModal(false)} className="bg-white/10 hover:bg-white/20 p-2 rounded-full transition-colors">
                   <X size={20} />
@@ -946,7 +1048,7 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
 
               <div className="flex-1 overflow-y-auto p-6 bg-gray-50/50">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {MOCK_DIRECTORY_MEMBERS.map(member => (
+                  {groupMembers.map(member => (
                     <div
                       key={member.id}
                       onClick={() => setAttendanceData(prev => ({ ...prev, [member.id]: !prev[member.id] }))}
@@ -959,7 +1061,7 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
                       <div className="flex items-center gap-3">
                         <div className="relative">
                           <img
-                            src={`https://ui-avatars.com/api/?name=${member.fullName}&background=${attendanceData[member.id] ? '111827' : 'e5e7eb'}&color=${attendanceData[member.id] ? 'ffffff' : '6b7280'}`}
+                            src={`https://ui-avatars.com/api/?name=${member.firstName}+${member.lastName}&background=${attendanceData[member.id] ? '111827' : 'e5e7eb'}&color=${attendanceData[member.id] ? 'ffffff' : '6b7280'}`}
                             alt=""
                             className="w-10 h-10 rounded-full border-2 border-white shadow-sm"
                           />
@@ -971,7 +1073,7 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
                         </div>
                         <div>
                           <p className={`font-bold text-sm ${attendanceData[member.id] ? 'text-gray-900' : 'text-gray-600'}`}>
-                            {member.fullName}
+                            {member.firstName} {member.lastName}
                           </p>
                           <p className="text-xs text-gray-400">Regular Participant</p>
                         </div>
@@ -988,26 +1090,51 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
 
               <div className="p-6 bg-white border-t border-gray-100 flex flex-col gap-6">
                 <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
-                  <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                    <User size={14} className="text-gray-900" />
-                    Assign Next Week's Session Leader
-                  </label>
-                  <div className="relative">
-                    <select
-                      value={nextLeaderId}
-                      onChange={(e) => setNextLeaderId(e.target.value)}
-                      className="w-full pl-4 pr-10 py-3 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-900 focus:ring-2 focus:ring-gray-900 focus:border-gray-900 outline-none transition-all appearance-none cursor-pointer"
-                    >
-                      <option value="">Select member to lead next...</option>
-                      {MOCK_DIRECTORY_MEMBERS.map(member => (
-                        <option key={member.id} value={member.id}>{member.fullName}</option>
-                      ))}
-                    </select>
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-                      <TrendingUp size={16} />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <Calendar size={14} className="text-gray-900" />
+                        Next Week's Topic
+                      </label>
+                      <input
+                        type="text"
+                        value={nextTopic}
+                        onChange={(e) => setNextTopic(e.target.value)}
+                        placeholder="Enter session topic..."
+                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-900 focus:ring-2 focus:ring-gray-900 focus:border-gray-900 outline-none transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <User size={14} className="text-gray-900" />
+                        Assign Next Week's Leader
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={nextLeaderId}
+                          onChange={(e) => setNextLeaderId(e.target.value)}
+                          className="w-full pl-4 pr-10 py-3 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-900 focus:ring-2 focus:ring-gray-900 focus:border-gray-900 outline-none transition-all appearance-none cursor-pointer"
+                        >
+                          <option value="">Select member to lead next...</option>
+                          {groupMembers.map(member => (
+                            <option key={member.id} value={member.id}>{member.firstName} {member.lastName}</option>
+                          ))}
+                        </select>
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                          <TrendingUp size={16} />
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-gray-400 mt-2 font-medium italic">
+                        {(() => {
+                          if (!activeSession) return '';
+                          const [y, m, d] = activeSession.sessionDate.split('-').map(Number);
+                          const next = new Date(y, m - 1, d);
+                          next.setDate(next.getDate() + 7);
+                          return `Scheduling for ${next.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} • ${activeSession.startTime || '18:00'}`;
+                        })()}
+                      </p>
                     </div>
                   </div>
-                  <p className="text-[10px] text-gray-400 mt-2 font-medium italic">Scheduling for Dec 29, 2025 • 2:00 PM</p>
                 </div>
 
                 <div className="flex items-center justify-between">
@@ -1021,7 +1148,7 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
                     <div className="h-8 w-px bg-gray-100"></div>
                     <div className="text-center">
                       <p className="text-2xl font-black text-gray-400 leading-none">
-                        {MOCK_DIRECTORY_MEMBERS.length - Object.values(attendanceData).filter(Boolean).length}
+                        {groupMembers.length - Object.values(attendanceData).filter(Boolean).length}
                       </p>
                       <p className="text-[10px] uppercase tracking-wider font-bold text-gray-400">Absent</p>
                     </div>
@@ -1034,35 +1161,45 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
                       Discard
                     </button>
                     <button
-                      onClick={() => {
-                        // Logic to reschedule and save
-                        const currentActiveSession = upcomingSessions.find(s => s.sessionDate === '2025-12-22');
+                      onClick={async () => {
+                        const currentActiveSession = activeSessions[0] || upcomingSessions.find(s => s.id === activeSession?.id);
                         if (currentActiveSession) {
-                          // 1. Mark current as completed and move to past
-                          const completedSession: HBSSession = {
-                            ...currentActiveSession,
-                            status: 'Completed',
-                            attendance: attendanceData
-                          };
-                          setPastSessions(prev => [completedSession, ...prev]);
-                          setUpcomingSessions(prev => prev.filter(s => s.id !== currentActiveSession.id));
+                          // 1. Record attendance in backend
+                          const attendancePayload = Object.entries(attendanceData).map(([memberId, isPresent]) => ({
+                            memberId,
+                            isPresent
+                          }));
 
-                          // 2. Schedule next week's session
+                          await recordAttendance(currentActiveSession.id, attendancePayload);
+
+                          // 2. Mark current as completed
+                          const updated = await updateSession(currentActiveSession.id, { status: 'Completed' });
+                          const sessionWithAttendance = { ...updated, attendance: attendanceData };
+
+                          setPastSessions(prev => [sessionWithAttendance, ...prev]);
+                          setUpcomingSessions(prev => prev.filter(s => s.id !== currentActiveSession.id));
+                          setActiveSessions(prev => prev.filter(s => s.id !== currentActiveSession.id));
+
+                          // 3. Schedule next week's session if leader assigned
                           if (nextLeaderId) {
-                            const nextSession: HBSSession = {
-                              id: `s-next-${Date.now()}`,
+                            const [y, m, day] = currentActiveSession.sessionDate.split('-').map(Number);
+                            const nextDate = new Date(y, m - 1, day);
+                            nextDate.setDate(nextDate.getDate() + 7);
+                            const nextDateStr = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-${String(nextDate.getDate()).padStart(2, '0')}`;
+
+                            const nextSession = await scheduleSession({
                               groupId: currentActiveSession.groupId,
-                              sessionDate: '2025-12-29',
-                              topic: 'Divine Restoration & Purpose', // Example topic for next week
+                              sessionDate: nextDateStr,
+                              topic: nextTopic || currentActiveSession.topic || 'Weekly Fellowship Discussion',
                               discussionLeaderId: nextLeaderId,
-                              status: 'Scheduled',
-                              attendance: {}
-                            };
+                              startTime: currentActiveSession.startTime || '18:00',
+                              endTime: currentActiveSession.endTime || '20:00',
+                              status: 'Scheduled'
+                            });
                             setUpcomingSessions(prev => [...prev, nextSession]);
                           }
                         }
 
-                        console.log('Attendance saved and next session scheduled with leader:', nextLeaderId);
                         setShowAttendanceModal(false);
                         setNextLeaderId('');
                       }}
@@ -1119,14 +1256,24 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-1">Time *</label>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Start Time *</label>
                     <input
                       type="time"
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500 outline-none"
-                      value={newSession.time}
-                      onChange={e => setNewSession({ ...newSession, time: e.target.value })}
+                      value={newSession.startTime}
+                      onChange={e => setNewSession({ ...newSession, startTime: e.target.value })}
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">End Time *</label>
+                  <input
+                    type="time"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500 outline-none"
+                    value={newSession.endTime}
+                    onChange={e => setNewSession({ ...newSession, endTime: e.target.value })}
+                  />
                 </div>
 
                 <div>
@@ -1137,8 +1284,8 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
                     onChange={e => setNewSession({ ...newSession, leaderId: e.target.value })}
                   >
                     <option value="">Select a leader...</option>
-                    {MOCK_DIRECTORY_MEMBERS.map(m => (
-                      <option key={m.id} value={m.id}>{m.fullName}</option>
+                    {groupMembers.map(m => (
+                      <option key={m.id} value={m.id}>{m.firstName} {m.lastName}</option>
                     ))}
                   </select>
                 </div>
@@ -1155,30 +1302,32 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
                   Cancel
                 </button>
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     if (editingSession) {
-                      setUpcomingSessions(prev => prev.map(s => s.id === editingSession.id ? {
-                        ...s,
+                      const updated = await updateSession(editingSession.id, {
                         topic: newSession.topic,
                         sessionDate: newSession.date,
+                        startTime: newSession.startTime,
+                        endTime: newSession.endTime,
                         discussionLeaderId: newSession.leaderId
-                      } : s));
+                      });
+
+                      setUpcomingSessions(prev => prev.map(s => s.id === editingSession.id ? updated : s));
                     } else {
-                      // Logic for new session
-                      const nextSession: HBSSession = {
-                        id: `s-custom-${Date.now()}`,
-                        groupId: 'g1',
-                        sessionDate: newSession.date,
+                      const session = await scheduleSession({
+                        groupId: currentGroup.id,
                         topic: newSession.topic,
+                        sessionDate: newSession.date,
+                        startTime: newSession.startTime,
+                        endTime: newSession.endTime,
                         discussionLeaderId: newSession.leaderId,
-                        status: 'Scheduled',
-                        attendance: {}
-                      };
-                      setUpcomingSessions(prev => [...prev, nextSession]);
+                        status: 'Scheduled'
+                      });
+                      setUpcomingSessions(prev => [session, ...prev]);
                     }
                     setShowScheduleModal(false);
                     setEditingSession(null);
-                    setNewSession({ topic: '', date: '', time: '10:00', leaderId: '' });
+                    setNewSession({ topic: '', date: '', startTime: '18:00', endTime: '20:00', leaderId: '' });
                   }}
                   disabled={!newSession.topic || !newSession.date}
                   className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-black disabled:opacity-50"
@@ -1199,7 +1348,7 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
               <div className="p-5 border-b border-gray-100 flex justify-between items-center">
                 <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
                   <MessageCircle size={20} className="text-amber-600" />
-                  Submit Question for {MOCK_DIRECTORY_MEMBERS.find(m => m.id === selectedMemberForNote)?.fullName}
+                  Submit Question for {members.find(m => m.id === selectedMemberForNote)?.firstName} {members.find(m => m.id === selectedMemberForNote)?.lastName}
                 </h3>
                 <button onClick={() => setShowNoteModal(false)} className="text-gray-400 hover:text-gray-600">
                   <X size={20} />
@@ -1375,27 +1524,38 @@ export const HBSPortal: React.FC<Props> = ({ groups, members, updateMember, subm
 
               <h4 className="font-bold text-gray-900 mb-3 border-b pb-2">Question & Note History</h4>
 
-              {currentMemberNotes.length === 0 ? (
-                <p className="text-gray-500 text-sm italic py-4 text-center">No questions or notes recorded yet.</p>
-              ) : (
-                <div className="space-y-4">
-                  {currentMemberNotes.map(note => (
-                    <div key={note.id} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                      <div className="flex justify-between items-start mb-1">
-                        <p className="text-sm font-bold text-gray-900">{note.title}</p>
-                        <span className="text-xs text-gray-500">{new Date(note.date).toLocaleDateString()}</span>
+              {(() => {
+                const filteredNotes = currentMemberNotes.filter(note => note.type !== 'visitation' && note.noteType !== 'visitation');
+                return filteredNotes.length === 0 ? (
+                  <p className="text-gray-500 text-sm italic py-4 text-center">No questions or notes recorded yet.</p>
+                ) : (
+                  <div className="space-y-4">
+                    {filteredNotes.map(note => (
+                      <div key={note.id} className={`rounded-lg p-3 border transition-all ${note.isRedFlag ? 'bg-red-50 border-red-200 shadow-sm shadow-red-100' : 'bg-gray-50 border-gray-200'}`}>
+                        <div className="flex justify-between items-start mb-1">
+                          <div className="flex flex-col">
+                            {note.isRedFlag && (
+                              <span className="flex items-center gap-1 text-[10px] font-black text-red-600 uppercase tracking-wider mb-0.5">
+                                <Flag size={10} fill="currentColor" />
+                                Urgent
+                              </span>
+                            )}
+                            <p className={`text-sm font-bold ${note.isRedFlag ? 'text-red-900' : 'text-gray-900'}`}>{note.title}</p>
+                          </div>
+                          <span className="text-xs text-gray-500">{new Date(note.date || note.createdAt).toLocaleDateString()}</span>
+                        </div>
+                        <p className={`text-sm mb-2 ${note.isRedFlag ? 'text-red-800' : 'text-gray-600'}`}>{note.description || note.content}</p>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className={`px-2 py-0.5 rounded-full font-medium ${note.isRedFlag ? 'bg-red-100 text-red-700' : note.type === 'question' ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-700'}`}>
+                            {note.type || note.noteType}
+                          </span>
+                          <span className={`${note.isRedFlag ? 'text-red-400' : 'text-gray-400'}`}>By {note.loggedBy || note.authorName}</span>
+                        </div>
                       </div>
-                      <p className="text-sm text-gray-600 mb-2">{note.description}</p>
-                      <div className="flex justify-between items-center text-xs">
-                        <span className={`px-2 py-0.5 rounded-full ${note.type === 'question' ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-700'}`}>
-                          {note.type}
-                        </span>
-                        <span className="text-gray-400">By {note.loggedBy}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>

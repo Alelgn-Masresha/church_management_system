@@ -10,6 +10,16 @@ exports.getNotesByMember = async (req, res) => {
     }
 };
 
+exports.getRecentNotes = async (req, res) => {
+    try {
+        const { limit } = req.query;
+        const notes = await PastoralNote.findRecent(limit ? parseInt(limit) : 10);
+        res.json(notes);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
 exports.createNote = async (req, res) => {
     try {
         const newNote = await PastoralNote.create(req.body);

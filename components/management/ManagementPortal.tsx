@@ -15,7 +15,7 @@ interface Props {
    groups: HBSGroup[];
    updateMember: (id: string, updates: Partial<Member>) => void;
    updateMembers: (updates: { id: string, data: Partial<Member> }[]) => void;
-   onRegisterMember: (data: FormData) => void;
+   onRegisterMember: (data: any) => void;
    structureActions: {
       addGroup: (g: HBSGroup) => void;
       updateGroup: (id: string, g: Partial<HBSGroup>) => void;
@@ -25,6 +25,10 @@ interface Props {
       deleteZone: (id: string) => void;
    };
    newQuestionCount?: number;
+   recentNotes?: any[];
+   submitNote: (data: any) => Promise<void>;
+   fetchMemberNotes: (id: string) => Promise<any[]>;
+   currentUser: Member | null;
 }
 
 export const ManagementPortal: React.FC<Props> = (props) => {
@@ -134,28 +138,38 @@ export const ManagementPortal: React.FC<Props> = (props) => {
                                     <MessageSquare size={16} className="text-blue-600" />
                                     Recent Questions
                                  </h4>
-                                 <div className="space-y-1">
-                                    <div
-                                       onClick={() => handleNotificationClick('m1')}
-                                       className="p-3 rounded-xl bg-amber-50 border border-amber-100 cursor-pointer hover:bg-amber-100 transition-all group/item"
-                                    >
-                                       <div className="flex justify-between items-start mb-1">
-                                          <p className="text-xs font-black text-slate-900 line-clamp-1 group-hover/item:text-amber-800">Questions from Abebe Bikila</p>
-                                          <span className="text-[10px] bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded font-bold uppercase">New</span>
-                                       </div>
-                                       <p className="text-[10px] text-slate-500 line-clamp-1">"Deep explanation of Spirit of adoption..."</p>
-                                       <p className="text-[9px] text-slate-400 mt-2 font-medium">2 minutes ago • HBS Cell 3</p>
-                                    </div>
-                                    <div
-                                       onClick={() => handleNotificationClick('m3')}
-                                       className="p-3 rounded-xl hover:bg-slate-50 cursor-pointer transition-all group/item"
-                                    >
-                                       <div className="flex justify-between items-start mb-1">
-                                          <p className="text-xs font-bold text-slate-900 line-clamp-1 group-hover/item:text-blue-600">Counseling request from Almaz Ayana</p>
-                                       </div>
-                                       <p className="text-[10px] text-slate-500 line-clamp-1">"Sarah missed two consecutive Sunday..."</p>
-                                       <p className="text-[9px] text-slate-400 mt-2 font-medium">1 hour ago • Phone Check-in</p>
-                                    </div>
+                                 <div className="space-y-1 max-h-64 overflow-y-auto custom-scrollbar">
+                                    {props.recentNotes && props.recentNotes.length > 0 ? (
+                                       props.recentNotes.map(note => (
+                                          <div
+                                             key={note.id}
+                                             onClick={() => handleNotificationClick(note.member_id)}
+                                             className={`p-3 rounded-xl cursor-pointer transition-all group/item ${note.status === 'new' ? 'bg-amber-50 border border-amber-100' : 'hover:bg-slate-50'}`}
+                                          >
+                                             <div className="flex justify-between items-start mb-1">
+                                                <p className="text-xs font-black text-slate-900 line-clamp-1 group-hover/item:text-amber-800">
+                                                   {note.note_type === 'question' ? 'Question' : 'Red Flag'} from {note.subject_first_name} {note.subject_last_name}
+                                                </p>
+                                                {note.status === 'new' && (
+                                                   <span className="text-[10px] bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded font-bold uppercase">New</span>
+                                                )}
+                                             </div>
+                                             <p className="text-[10px] text-slate-500 line-clamp-1">"{note.content}"</p>
+                                             <p className="text-[9px] text-slate-400 mt-2 font-medium">
+                                                {(() => {
+                                                   const d = new Date(note.created_at);
+                                                   const diff = Math.floor((new Date().getTime() - d.getTime()) / 60000);
+                                                   if (diff < 1) return 'Just now';
+                                                   if (diff < 60) return `${diff} minutes ago`;
+                                                   if (diff < 1440) return `${Math.floor(diff / 60)} hours ago`;
+                                                   return d.toLocaleDateString();
+                                                })()} • {note.group_name || 'General'}
+                                             </p>
+                                          </div>
+                                       ))
+                                    ) : (
+                                       <div className="text-center py-6 text-slate-400 text-xs italic">No recent notifications</div>
+                                    )}
                                  </div>
                                  <button className="w-full mt-4 py-2 bg-slate-900 text-white rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-black transition-colors">
                                     View All Notifications
@@ -193,6 +207,8 @@ export const ManagementPortal: React.FC<Props> = (props) => {
                   {activeTab === 'dashboard' && (
                      <Dashboard
                         members={props.members}
+                        zones={props.zones}
+                        groups={props.groups}
                         onNavigate={(tab, filters) => {
                            setActiveTab(tab);
                            if (filters) setInitialFilters(filters);
@@ -211,6 +227,9 @@ export const ManagementPortal: React.FC<Props> = (props) => {
                         onClearDeepLink={() => setDeepLinkedMemberId(null)}
                         initialFilters={initialFilters}
                         onClearFilters={() => setInitialFilters(null)}
+                        submitNote={props.submitNote}
+                        fetchMemberNotes={props.fetchMemberNotes}
+                        currentUser={props.currentUser}
                      />
                   )}
 

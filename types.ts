@@ -28,6 +28,7 @@ export interface FormData {
   gender: 'Male' | 'Female' | '';
   birthDate: string;
   birthDateType: 'GC' | 'EC';
+  photoUrl?: string;
 
   // Address
   subCity: string;
@@ -101,7 +102,8 @@ export const INITIAL_DATA: FormData = {
   ministries: [], currentlyInDiscipleship: '', discipleshipLeader: '',
   maritalStatus: '', marriageDate: '', spouseName: '', spouseMobile: '', isSpouseChristian: '', isSpouseMember: '', spouseChurch: '',
   children: [],
-  educationHistory: [], professionalStatus: '', occupation: '', primaryLivelihood: ''
+  educationHistory: [], professionalStatus: '', occupation: '', primaryLivelihood: '',
+  photoUrl: ''
 };
 
 // --- Management Extended Types ---
@@ -119,7 +121,6 @@ export interface TransferDetails {
 export interface Member extends FormData {
   id: string;
   memberId?: string; // e.g. "2024001"
-  photoUrl?: string;
   role: MemberRole;
   status: MemberStatus;
   registrationDate: string;
@@ -182,4 +183,6 @@ export interface HBSSession {
   discussionLeaderId: string;
   status: 'Scheduled' | 'Completed' | 'Cancelled';
   attendance: Record<string, boolean>; // memberId -> isPresent
+  startTime?: string;
+  endTime?: string;
 }

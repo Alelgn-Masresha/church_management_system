@@ -5,7 +5,7 @@ import { PersonalAndAddress } from './sections/PersonalAndAddress';
 import { ReligiousAndMinistry } from './sections/ReligiousAndMinistry';
 import { FamilyInfo } from './sections/FamilyInfo';
 import { ProfessionalInfo } from './sections/ProfessionalInfo';
-import { CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
 
 const steps = [
   { id: 1, title: 'Personal & Address', subtitle: 'Basic Information' },
@@ -16,7 +16,7 @@ const steps = [
 ];
 
 interface Props {
-  onSuccess?: (data: FormData) => void;
+  onSuccess?: (registeredUser: any) => void;
 }
 
 export const RegistrationWizard: React.FC<Props> = ({ onSuccess }) => {
@@ -28,22 +28,74 @@ export const RegistrationWizard: React.FC<Props> = ({ onSuccess }) => {
     setFormData(prev => ({ ...prev, ...fields }));
   };
 
+  const [isLoading, setIsLoading] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [generalError, setGeneralError] = useState<string | null>(null);
+
+  const validateStep = (step: number): boolean => {
+
+
+    const newErrors: Record<string, string> = {};
+
+    if (step === 1) {
+      const fields = [
+        { field: 'firstName', value: formData.firstName, label: 'First Name' },
+        { field: 'middleName', value: formData.middleName, label: 'Middle Name' },
+        { field: 'lastName', value: formData.lastName, label: 'Last Name' },
+        { field: 'gender', value: formData.gender, label: 'Gender' },
+        { field: 'birthDate', value: formData.birthDate, label: 'Birth Date' },
+        { field: 'nationality', value: formData.nationality, label: 'Nationality' },
+        { field: 'mobilePhone', value: formData.mobilePhone, label: 'Mobile Phone' },
+        { field: 'subCity', value: formData.subCity, label: 'Sub City' },
+        { field: 'city', value: formData.city, label: 'City' },
+        { field: 'country', value: formData.country, label: 'Country' },
+      ];
+
+      for (const req of fields) {
+        if (!req.value || (typeof req.value === 'string' && req.value.trim() === '') || (req.value === '+251 ')) {
+          newErrors[req.field] = `${req.label} is required`;
+        }
+      }
+    } else if (step === 2) {
+      if (!formData.religiousBackground) newErrors.religiousBackground = 'Religious background is required';
+      if (!formData.dateOfSalvation) newErrors.dateOfSalvation = 'Salvation date is required';
+      if (!formData.isBaptized) newErrors.isBaptized = 'Baptism status is required';
+      if (!formData.howDidYouCome || formData.howDidYouCome.trim() === '') newErrors.howDidYouCome = 'This field is required';
+    } else if (step === 3) {
+      if (!formData.maritalStatus) {
+        newErrors.maritalStatus = 'Marital status is required';
+      } else if (formData.maritalStatus === 'Married') {
+        if (!formData.marriageDate) newErrors.marriageDate = 'Marriage date is required';
+        if (!formData.spouseName) newErrors.spouseName = 'Spouse name is required';
+        if (!formData.spouseMobile) newErrors.spouseMobile = 'Spouse mobile is required';
+      }
+    } else if (step === 4) {
+      if (!formData.professionalStatus) {
+        newErrors.professionalStatus = 'Professional status is required';
+      }
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   const nextStep = () => {
+    if (!validateStep(currentStep)) return;
+    setErrors({});
     setCurrentStep(prev => Math.min(prev + 1, steps.length));
     window.scrollTo(0, 0);
   };
 
   const prevStep = () => {
+    setErrors({});
     setCurrentStep(prev => Math.max(prev - 1, 1));
     window.scrollTo(0, 0);
   };
 
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
     setIsLoading(true);
-    setError(null);
+    setGeneralError(null);
     try {
       const response = await fetch('/api/users', {
         method: 'POST',
@@ -57,13 +109,14 @@ export const RegistrationWizard: React.FC<Props> = ({ onSuccess }) => {
         throw new Error('Failed to submit registration');
       }
 
+      const result = await response.json();
       setIsSubmitted(true);
       if (onSuccess) {
-        onSuccess(formData);
+        onSuccess(result);
       }
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'An error occurred during submission.');
+      setGeneralError(err.message || 'An error occurred during submission.');
     } finally {
       setIsLoading(false);
     }
@@ -131,11 +184,20 @@ export const RegistrationWizard: React.FC<Props> = ({ onSuccess }) => {
         <span className="text-sm text-gray-500">{steps[currentStep - 1].title}</span>
       </div>
 
+      {(Object.keys(errors).length > 0 || generalError) && (
+        <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-3 animate-shake">
+          <AlertCircle size={20} />
+          <span className="text-sm font-bold">
+            {generalError || "Please correct the highlighted errors before proceeding."}
+          </span>
+        </div>
+      )}
+
       <div className="flex-grow">
-        {currentStep === 1 && <PersonalAndAddress data={formData} update={updateFormData} />}
-        {currentStep === 2 && <ReligiousAndMinistry data={formData} update={updateFormData} />}
-        {currentStep === 3 && <FamilyInfo data={formData} update={updateFormData} />}
-        {currentStep === 4 && <ProfessionalInfo data={formData} update={updateFormData} />}
+        {currentStep === 1 && <PersonalAndAddress data={formData} update={updateFormData} errors={errors} />}
+        {currentStep === 2 && <ReligiousAndMinistry data={formData} update={updateFormData} errors={errors} />}
+        {currentStep === 3 && <FamilyInfo data={formData} update={updateFormData} errors={errors} />}
+        {currentStep === 4 && <ProfessionalInfo data={formData} update={updateFormData} errors={errors} />}
 
         {currentStep === 5 && (
           <div className="animate-fadeIn space-y-6">
@@ -177,12 +239,6 @@ export const RegistrationWizard: React.FC<Props> = ({ onSuccess }) => {
       </div>
 
       {/* Navigation Buttons */}
-      {/* Error Message */}
-      {error && (
-        <div className="mb-4 p-4 bg-red-50 text-red-700 rounded-lg border border-red-200">
-          {error}
-        </div>
-      )}
 
       {/* Navigation Buttons */}
       <div className="mt-10 pt-6 border-t border-gray-100 flex justify-between items-center">
@@ -216,6 +272,6 @@ export const RegistrationWizard: React.FC<Props> = ({ onSuccess }) => {
           </button>
         )}
       </div>
-    </div>
+    </div >
   );
 };

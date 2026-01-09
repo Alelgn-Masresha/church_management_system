@@ -19,12 +19,16 @@ interface Props {
       selectedZone?: string;
    } | null;
    onClearFilters?: () => void;
+   submitNote: (data: any) => Promise<void>;
+   fetchMemberNotes: (id: string) => Promise<any[]>;
+   currentUser: Member | null;
 }
 
 export const MemberDirectory: React.FC<Props> = ({
    members, zones, groups, onUpdateMember, onAddMember,
    initialSelectedMemberId, onClearDeepLink,
-   initialFilters, onClearFilters
+   initialFilters, onClearFilters,
+   submitNote, fetchMemberNotes, currentUser
 }) => {
    const [view, setView] = useState<'list' | 'profile'>('list');
    const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
@@ -126,7 +130,16 @@ export const MemberDirectory: React.FC<Props> = ({
    if (view === 'profile' && selectedMemberId) {
       const member = members.find(m => m.id === selectedMemberId);
       if (member) {
-         return <MemberProfile member={member} onBack={() => setView('list')} onUpdate={onUpdateMember} />;
+         return (
+            <MemberProfile
+               member={member}
+               onBack={() => setView('list')}
+               onUpdate={onUpdateMember}
+               submitNote={submitNote}
+               fetchMemberNotes={fetchMemberNotes}
+               currentUser={currentUser}
+            />
+         );
       }
    }
 

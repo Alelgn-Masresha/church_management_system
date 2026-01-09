@@ -5,7 +5,11 @@ class User {
         const query = `
       SELECT u.*, 
              z.name as group_name,
-             c.first_name as counselor_first_name, c.last_name as counselor_last_name
+             c.first_name as counselor_first_name, c.last_name as counselor_last_name,
+             EXISTS (
+                SELECT 1 FROM pastoral_notes pn 
+                WHERE pn.member_id = u.id AND pn.is_red_flag = true AND pn.status != 'answered'
+             ) as is_red_flagged
       FROM users u
       LEFT JOIN groups g ON u.assigned_group_id = g.id
       LEFT JOIN zones z ON g.zone_id = z.id
@@ -28,7 +32,7 @@ class User {
 
         const {
             firstName, middleName, lastName,
-            gender, birthDate, nationality,
+            gender, birthDate, nationality, photoUrl,
             mobilePhone, extraMobile, homePhone, workPhone,
             primaryEmail, secondaryEmail,
             subCity, suburb, district, houseNumber, city, country,
@@ -41,7 +45,7 @@ class User {
         const query = `
       INSERT INTO users (
         first_name, middle_name, last_name,
-        gender, birth_date, nationality,
+        gender, birth_date, nationality, photo_url,
         mobile_phone, extra_mobile, home_phone, work_phone,
         primary_email, secondary_email,
         sub_city, suburb, district, house_number, city, country,
@@ -54,7 +58,7 @@ class User {
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
         $11, $12, $13, $14, $15, $16, $17, $18,
         $19, $20, $21, $22, $23, $24, $25, $26,
-        $27, $28, $29, $30, $31
+        $27, $28, $29, $30, $31, $32
       )
       RETURNING *
     `;
@@ -63,7 +67,7 @@ class User {
 
         const values = [
             val(firstName), val(middleName), val(lastName),
-            val(gender), dateVal(birthDate), val(nationality),
+            val(gender), dateVal(birthDate), val(nationality), val(photoUrl),
             val(mobilePhone), val(extraMobile), val(homePhone), val(workPhone),
             val(primaryEmail), val(secondaryEmail),
             val(subCity), val(suburb), val(district), val(houseNumber), val(city), val(country),
@@ -87,6 +91,7 @@ class User {
         const allowedFields = {
             firstName: 'first_name',
             lastName: 'last_name',
+            photoUrl: 'photo_url',
             mobilePhone: 'mobile_phone',
             role: 'role',
             assignedCounselId: 'assigned_counselor_id',

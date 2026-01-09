@@ -15,6 +15,23 @@ class PastoralNote {
         return rows;
     }
 
+    static async findRecent(limit = 10) {
+        const query = `
+            SELECT pn.*, 
+                   u.first_name as subject_first_name, u.last_name as subject_last_name,
+                   a.first_name as author_first_name, a.last_name as author_last_name,
+                   g.name as group_name
+            FROM pastoral_notes pn
+            JOIN users u ON pn.member_id = u.id
+            LEFT JOIN users a ON pn.author_id = a.id
+            LEFT JOIN groups g ON u.assigned_group_id = g.id
+            ORDER BY pn.created_at DESC
+            LIMIT $1
+        `;
+        const { rows } = await db.query(query, [limit]);
+        return rows;
+    }
+
     static async create(noteData) {
         const { memberId, authorId, title, content, noteType, location, category, isRedFlag, status } = noteData;
 

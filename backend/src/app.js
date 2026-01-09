@@ -4,19 +4,23 @@ const db = require('./config/db');
 require('dotenv').config();
 
 const app = express();
+const path = require('path');
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Routes
 const userRoutes = require('./routes/userRoutes');
 const groupRoutes = require('./routes/groupRoutes');
 const zoneRoutes = require('./routes/zoneRoutes');
+const uploadRoutes = require('./routes/uploadRoutes');
 
 app.use('/api/users', userRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/zones', zoneRoutes);
+app.use('/api/upload', uploadRoutes);
 
 const childRoutes = require('./routes/childRoutes');
 const educationRoutes = require('./routes/educationRoutes');

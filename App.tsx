@@ -11,14 +11,17 @@ export default function App() {
   const [members, setMembers] = useState<Member[]>([]);
   const [groups, setGroups] = useState<HBSGroup[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
+  const [currentUser, setCurrentUser] = useState<Member | null>(null);
+  const [recentNotes, setRecentNotes] = useState<any[]>([]);
   // Fetch data from API
   React.useEffect(() => {
     const fetchData = async () => {
       try {
-        const [usersRes, groupsRes, zonesRes] = await Promise.all([
+        const [usersRes, groupsRes, zonesRes, notesRes] = await Promise.all([
           fetch('/api/users'),
           fetch('/api/groups'),
-          fetch('/api/zones')
+          fetch('/api/zones'),
+          fetch('/api/pastoral-notes/recent')
         ]);
 
         if (usersRes.ok) {
@@ -50,6 +53,8 @@ export default function App() {
             assignedCounselId: u.assigned_counselor_id,
             registrationDate: u.registration_date,
             memberId: u.member_id,
+            isRedFlagged: u.is_red_flagged,
+            photoUrl: u.photo_url,
             // Ensure arrays/objects are handled if they come as null
             ministries: [],
             children: [],
@@ -57,6 +62,10 @@ export default function App() {
             educationHistory: []
           }));
           setMembers(mappedUsers);
+
+          // Set current user to first admin or first user
+          const admin = mappedUsers.find((m: any) => m.role === 'Admin' || m.role === 'Pastor');
+          setCurrentUser(admin || mappedUsers[0] || null);
         }
 
         if (zonesRes.ok) {
@@ -83,6 +92,11 @@ export default function App() {
           setGroups(mappedGroups);
         }
 
+        if (notesRes.ok) {
+          const notesData = await notesRes.json();
+          setRecentNotes(notesData);
+        }
+
       } catch (error) {
         console.error("Failed to fetch data:", error);
       }
@@ -91,55 +105,49 @@ export default function App() {
     fetchData();
   }, []);
 
-  const [newQuestionCount, setNewQuestionCount] = useState(2); // Mock initial count
+  const newQuestionCount = recentNotes.filter(n => n.status === 'new').length;
 
   // Actions
-  const handleNewRegistration = async (data: any) => {
+  const handleMemberRegistered = (u: any) => {
     try {
-      const response = await fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      });
+      if (!u) return;
 
-      if (response.ok) {
-        const u = await response.json();
-        const mappedUser: Member = {
-          ...u,
-          firstName: u.first_name,
-          middleName: u.middle_name,
-          lastName: u.last_name,
-          mobilePhone: u.mobile_phone,
-          extraMobile: u.extra_mobile,
-          homePhone: u.home_phone,
-          workPhone: u.work_phone,
-          primaryEmail: u.primary_email,
-          secondaryEmail: u.secondary_email,
-          subCity: u.sub_city,
-          houseNumber: u.house_number,
-          religiousBackground: u.religious_background,
-          dateOfSalvation: u.date_of_salvation,
-          isBaptized: u.is_baptized,
-          baptismDate: u.baptism_date,
-          previousChurchName: u.previous_church_name,
-          maritalStatus: u.marital_status,
-          spouseName: u.spouse_name,
-          marriageDate: u.marriage_date,
-          professionalStatus: u.professional_status,
-          assignedGroupId: u.assigned_group_id,
-          assignedCounselId: u.assigned_counselor_id,
-          registrationDate: u.registration_date,
-          memberId: u.member_id,
-          ministries: [],
-          children: [],
-          socials: {},
-          educationHistory: []
-        };
-        setMembers(prev => [mappedUser, ...prev]);
-        alert("Member registered successfully!");
-      }
+      const mappedUser: Member = {
+        ...u,
+        firstName: u.first_name,
+        middleName: u.middle_name,
+        lastName: u.last_name,
+        mobilePhone: u.mobile_phone,
+        extraMobile: u.extra_mobile,
+        homePhone: u.home_phone,
+        workPhone: u.work_phone,
+        primaryEmail: u.primary_email,
+        secondaryEmail: u.secondary_email,
+        subCity: u.sub_city,
+        houseNumber: u.house_number,
+        religiousBackground: u.religious_background,
+        dateOfSalvation: u.date_of_salvation,
+        isBaptized: u.is_baptized,
+        baptismDate: u.baptism_date,
+        previousChurchName: u.previous_church_name,
+        maritalStatus: u.marital_status,
+        spouseName: u.spouse_name,
+        marriageDate: u.marriage_date,
+        professionalStatus: u.professional_status,
+        assignedGroupId: u.assigned_group_id,
+        assignedCounselId: u.assigned_counselor_id,
+        registrationDate: u.registration_date,
+        memberId: u.member_id,
+        photoUrl: u.photo_url,
+        ministries: [],
+        children: [],
+        socials: {},
+        educationHistory: []
+      };
+      setMembers(prev => [mappedUser, ...prev]);
+      // Alert is already handled by the wizard or we can keep it here
     } catch (e) {
-      console.error("Failed to register member:", e);
+      console.error("Failed to map registered member:", e);
     }
   };
 
@@ -311,13 +319,21 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(noteData)
       });
+
       if (response.ok) {
+        // If it's a red flag, update the member's state optimistically
+        if (noteData.isRedFlag) {
+          setMembers(prev => prev.map(m => m.id === noteData.memberId ? { ...m, isRedFlagged: true } : m));
+        }
         alert("Note submitted successfully!");
       } else {
-        console.error("Failed to submit note");
+        const errorData = await response.json();
+        console.error("Failed to submit note:", errorData.error);
+        alert(`Error: ${errorData.error || "Failed to submit note"}`);
       }
     } catch (e) {
       console.error("Error submitting note:", e);
+      alert("Network error. Please check your connection.");
     }
   };
 
@@ -347,11 +363,81 @@ export default function App() {
     }
   };
 
+  const fetchSessionsByGroup = async (groupId: string) => {
+    try {
+      const res = await fetch(`/api/hbs-sessions/group/${groupId}`);
+      if (res.ok) {
+        return await res.json();
+      }
+      return [];
+    } catch (e) {
+      console.error("Error fetching sessions:", e);
+      return [];
+    }
+  };
+
+  const handleScheduleSession = async (sessionData: any) => {
+    try {
+      const res = await fetch('/api/hbs-sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sessionData)
+      });
+      if (!res.ok) throw new Error("Failed to schedule session");
+      return await res.json();
+    } catch (e) {
+      console.error("Error scheduling session:", e);
+      throw e;
+    }
+  };
+
+  const handleUpdateSession = async (id: string, sessionData: any) => {
+    try {
+      const res = await fetch(`/api/hbs-sessions/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sessionData)
+      });
+      if (!res.ok) throw new Error("Failed to update session");
+      return await res.json();
+    } catch (e) {
+      console.error("Error updating session:", e);
+      throw e;
+    }
+  };
+
+  const handleRecordAttendance = async (sessionId: string, attendanceData: any) => {
+    try {
+      const res = await fetch(`/api/hbs-sessions/${sessionId}/attendance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(attendanceData)
+      });
+      if (!res.ok) throw new Error("Failed to record attendance");
+      return await res.json();
+    } catch (e) {
+      console.error("Error recording attendance:", e);
+      throw e;
+    }
+  };
+
   return (
     <div className="h-screen bg-gray-100 font-sans text-gray-900 overflow-hidden">
       <Routes>
         <Route path="/" element={<Navigate to="/admin" replace />} />
-        <Route path="/hbs-portal" element={<HBSPortal groups={groups} members={members} updateMember={handleUpdateMember} submitNote={handleSubmitNote} fetchMemberNotes={fetchMemberNotes} />} />
+        <Route path="/hbs-portal" element={
+          <HBSPortal
+            groups={groups}
+            members={members}
+            updateMember={handleUpdateMember}
+            submitNote={handleSubmitNote}
+            fetchMemberNotes={fetchMemberNotes}
+            fetchSessions={fetchSessionsByGroup}
+            scheduleSession={handleScheduleSession}
+            updateSession={handleUpdateSession}
+            recordAttendance={handleRecordAttendance}
+          />
+        } />
         <Route path="/admin" element={
           <ManagementPortal
             members={members}
@@ -360,8 +446,12 @@ export default function App() {
             updateMember={handleUpdateMember}
             updateMembers={handleUpdateMembers}
             structureActions={structureActions}
-            onRegisterMember={handleNewRegistration}
+            onRegisterMember={handleMemberRegistered}
             newQuestionCount={newQuestionCount}
+            recentNotes={recentNotes}
+            submitNote={handleSubmitNote}
+            fetchMemberNotes={fetchMemberNotes}
+            currentUser={currentUser}
           />
         } />
       </Routes>

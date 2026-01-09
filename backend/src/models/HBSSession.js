@@ -1,29 +1,55 @@
 const db = require('../config/db');
 
 class HBSSession {
+    static mapRow(r) {
+        if (!r) return null;
+        let sDate = r.session_date;
+        if (sDate instanceof Date) {
+            // Format as YYYY-MM-DD locally to avoid UTC shifts
+            sDate = `${sDate.getFullYear()}-${String(sDate.getMonth() + 1).padStart(2, '0')}-${String(sDate.getDate()).padStart(2, '0')}`;
+        }
+        return {
+            ...r,
+            id: r.id.toString(),
+            startTime: r.start_time ? r.start_time.toString().substring(0, 5) : null,
+            endTime: r.end_time ? r.end_time.toString().substring(0, 5) : null,
+            sessionDate: sDate,
+            discussionLeaderId: r.discussion_leader_id ? r.discussion_leader_id.toString() : null,
+            groupId: r.group_id ? r.group_id.toString() : null,
+            leaderFirstName: r.leader_first_name || r.first_name,
+            leaderLastName: r.leader_last_name || r.last_name
+        };
+    }
+
     static async findAllByGroup(groupId) {
         const query = `
-            SELECT s.*, 
-                   u.first_name as leader_first_name, u.last_name as leader_last_name
+            SELECT s.id, s.group_id, s.topic, s.discussion_leader_id, s.status, s.start_time, s.end_time, s.created_at,
+                   TO_CHAR(s.session_date, 'YYYY-MM-DD') as session_date,
+                   u.first_name as leader_first_name, u.last_name as leader_last_name,
+                   COALESCE((
+                       SELECT jsonb_object_agg(member_id::text, is_present)
+                       FROM session_attendance
+                       WHERE session_id = s.id
+                   ), '{}'::jsonb) as attendance
             FROM hbs_sessions s
             LEFT JOIN users u ON s.discussion_leader_id = u.id
             WHERE s.group_id = $1
             ORDER BY s.session_date DESC
         `;
         const { rows } = await db.query(query, [groupId]);
-        return rows;
+        return rows.map(r => this.mapRow(r));
     }
 
     static async create(sessionData) {
-        const { groupId, sessionDate, topic, discussionLeaderId, status } = sessionData;
+        const { groupId, sessionDate, topic, discussionLeaderId, status, startTime, endTime } = sessionData;
 
         const val = (v) => (v === '' || v === undefined ? null : v);
 
         const query = `
             INSERT INTO hbs_sessions (
-                group_id, session_date, topic, discussion_leader_id, status
+                group_id, session_date, topic, discussion_leader_id, status, start_time, end_time
             )
-            VALUES ($1, $2, $3, $4, $5)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING *
         `;
 
@@ -32,11 +58,13 @@ class HBSSession {
             val(sessionDate),
             val(topic),
             val(discussionLeaderId),
-            status || 'Scheduled'
+            status || 'Scheduled',
+            val(startTime),
+            val(endTime)
         ];
 
         const { rows } = await db.query(query, values);
-        return rows[0];
+        return this.mapRow(rows[0]);
     }
 
     static async update(id, sessionData) {
@@ -44,7 +72,9 @@ class HBSSession {
             sessionDate: 'session_date',
             topic: 'topic',
             discussionLeaderId: 'discussion_leader_id',
-            status: 'status'
+            status: 'status',
+            startTime: 'start_time',
+            endTime: 'end_time'
         };
 
         const updates = [];
@@ -70,7 +100,7 @@ class HBSSession {
         `;
 
         const { rows } = await db.query(query, values);
-        return rows[0];
+        return this.mapRow(rows[0]);
     }
 
     static async delete(id) {
