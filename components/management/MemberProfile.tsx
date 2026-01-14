@@ -191,9 +191,7 @@ export const MemberProfile: React.FC<Props> = ({ member, onBack, onUpdate, submi
             <nav className="flex gap-6">
                {[
                   { id: 'pastoral', label: 'Visitation Notes' },
-                  { id: 'details', label: 'Full Profile' },
-                  { id: 'spiritual', label: 'Spiritual History' },
-                  { id: 'family', label: 'Family Information' }
+                  { id: 'details', label: 'Full Profile' }
                ].map(tab => (
                   <button
                      key={tab.id}
@@ -348,24 +346,28 @@ export const MemberProfile: React.FC<Props> = ({ member, onBack, onUpdate, submi
                                  <PersonalAndAddress
                                     data={editData}
                                     update={(u) => setEditData({ ...editData, ...u })}
+                                    show="personal"
                                  />
                               )}
                               {detailsCategory === 'address' && (
                                  <PersonalAndAddress
                                     data={editData}
                                     update={(u) => setEditData({ ...editData, ...u })}
+                                    show="address"
                                  />
                               )}
                               {detailsCategory === 'testimony' && (
                                  <ReligiousAndMinistry
                                     data={editData}
                                     update={(u) => setEditData({ ...editData, ...u })}
+                                    show="testimony"
                                  />
                               )}
                               {detailsCategory === 'ministry' && (
                                  <ReligiousAndMinistry
                                     data={editData}
                                     update={(u) => setEditData({ ...editData, ...u })}
+                                    show="ministry"
                                  />
                               )}
                               {detailsCategory === 'family' && (

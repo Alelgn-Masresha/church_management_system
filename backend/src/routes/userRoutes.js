@@ -10,4 +10,4 @@ router.post('/batch/update', userController.batchUpdateUsers);
 
 router.delete('/:id', userController.deleteUser);
 
-module.exports = router;
+module.exports = router; 
